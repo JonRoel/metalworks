@@ -1,0 +1,190 @@
+{% extends "base.html" %}
+{% set title = "Admin - Edit Item" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Edit Item</h1>
+  <p>Update or delete an inventory record.</p>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+  <div class="form-grid">
+    <div class="form-group"><label>SKU</label><input id="sku"></div>
+    <div class="form-group"><label>Material</label><select class="searchable" id="material"></select></div>
+    <div class="form-group"><label>Grade</label><select class="searchable" id="grade"></select></div>
+    <div class="form-group"><label>Description</label><select class="searchable" id="description"></select></div>
+    <div class="form-group"><label>Length</label><input id="length" type="number" step="0.5"></div>
+    <div class="form-group"><label>Unit</label><input id="unit" value="ft" readonly></div>
+    <div class="form-group"><label>Location</label><select class="searchable" id="location"></select></div>
+    <div class="form-group"><label>Quantity</label><input id="quantity" type="number" step="1"></div>
+    <div class="form-group"><label>lbs/ft</label><input id="lbs_per_ft" type="number" step="0.001"></div>
+    <div class="form-group"><label>Weight</label><input id="weight" type="number" step="0.01" readonly></div>
+    <div class="form-group"><label>Supplier</label><input id="supplier"></div>
+    <div class="form-group"><label>PO Number</label><input id="po_number"></div>
+    <div class="form-group"><label>Cost / lb</label><input id="cost_lb" type="number" step="0.01"></div>
+    <div class="form-group"><label>Notes</label><textarea id="notes"></textarea></div>
+  </div>
+
+  <div style="display:flex; gap:10px; margin-top:15px;">
+    <button class="btn btn-success" id="save">Save</button>
+    <button class="btn btn-danger" id="del">Delete</button>
+    <a class="btn btn-secondary" href="/admin/inventory">Back</a>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+
+<script>
+const ITEM_ID = {{ item_id }};
+
+function show(type, text){
+  document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`;
+}
+
+// ------- Weight + Description lbs/ft wiring -------
+let descLbsMap = {}; // description_code -> lbs/ft (meta_num)
+
+async function loadDescriptionLookup(selected = "") {
+  const res = await fetch("/api/lookups/description");
+  const items = await res.json();
+
+  descLbsMap = {};
+  for (const it of items) {
+    if (it.code != null && it.meta_num != null) {
+      descLbsMap[String(it.code)] = it.meta_num;
+    }
+  }
+
+  const sel = document.getElementById("description");
+  sel.innerHTML = `<option value=""></option>` + items.map(it =>
+    `<option value="${it.code}">${it.label}</option>`
+  ).join("");
+
+  if (selected) sel.value = selected;
+}
+
+function recalcTotalWeight() {
+  const lengthEl = document.getElementById("length");
+  const qtyEl = document.getElementById("quantity");
+  const lbfEl = document.getElementById("lbs_per_ft");
+  const weightEl = document.getElementById("weight");
+
+  if (!lengthEl || !qtyEl || !lbfEl || !weightEl) return;
+
+  const len = parseFloat(lengthEl.value || "0");
+  const qty = parseFloat(qtyEl.value || "0");
+  const lbf = parseFloat(lbfEl.value || "0");
+
+  if (len > 0 && qty > 0 && lbf > 0) weightEl.value = (len * qty * lbf).toFixed(2);
+  else weightEl.value = "";
+}
+
+function wireWeightAutoCalc() {
+  const desc = document.getElementById("description");
+  const len  = document.getElementById("length");
+  const qty  = document.getElementById("quantity");
+  const lbf  = document.getElementById("lbs_per_ft");
+
+  if (!desc || !len || !qty || !lbf) return;
+
+  desc.addEventListener("change", () => {
+    const code = desc.value;
+    if (code && descLbsMap[code] != null) lbf.value = descLbsMap[code];
+    recalcTotalWeight();
+  });
+
+  len.addEventListener("input", recalcTotalWeight);
+  qty.addEventListener("input", recalcTotalWeight);
+  lbf.addEventListener("input", recalcTotalWeight);
+}
+
+// ------- Page load -------
+async function loadItem(){
+  const res = await fetch(`/api/inventory/${ITEM_ID}`);
+  if (!res.ok){
+    const d = await res.json().catch(()=> ({}));
+    show("error", d.error || "Failed to load item");
+    return;
+  }
+  const it = await res.json();
+
+  // 1) Populate lookups FIRST, then set values
+  await populateLookupSelect("location", "location", it.location || "");
+  await populateLookupSelect("grade", "grade", it.grade || "");
+  await populateLookupSelect("material", "material", it.material || "");
+
+  // description has special lookup (meta_num)
+  await loadDescriptionLookup(it.description || "");
+
+  // 2) Now set non-select fields
+  document.getElementById("sku").value = it.sku || "";
+  document.getElementById("length").value = it.length ?? "";
+  document.getElementById("unit").value = it.unit || "ft";
+  document.getElementById("quantity").value = it.quantity ?? 1;
+
+  document.getElementById("lbs_per_ft").value = it.lbs_per_ft ?? "";
+  document.getElementById("weight").value = it.weight ?? "";
+
+  document.getElementById("supplier").value = it.supplier || "";
+  document.getElementById("po_number").value = it.po_number || "";
+  document.getElementById("cost_lb").value = it.cost_lb ?? "";
+  document.getElementById("notes").value = it.notes || "";
+
+  // 3) Make searchable + wire calc
+  initSearchableSelects();
+  wireWeightAutoCalc();
+
+  // 4) Ensure derived weight matches current fields
+  recalcTotalWeight();
+}
+
+document.getElementById("save").onclick = async () => {
+  const payload = {
+    sku: document.getElementById("sku").value.trim(),
+    material: document.getElementById("material").value,
+    grade: document.getElementById("grade").value,
+    description: document.getElementById("description").value,
+    length: document.getElementById("length").value,
+    unit: document.getElementById("unit").value.trim(),
+    location: document.getElementById("location").value,
+    quantity: document.getElementById("quantity").value,
+    lbs_per_ft: document.getElementById("lbs_per_ft").value,
+    weight: document.getElementById("weight").value,
+    supplier: document.getElementById("supplier").value.trim(),
+    po_number: document.getElementById("po_number").value.trim(),
+    cost_lb: document.getElementById("cost_lb").value,
+    notes: document.getElementById("notes").value.trim(),
+  };
+
+  const res = await fetch(`/api/inventory/${ITEM_ID}`, {
+    method:"PUT",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  if (res.ok) {
+    show("success","Saved.");
+    setTimeout(()=> location.href="/admin/inventory", 200);
+  } else {
+    const d = await res.json().catch(()=> ({}));
+    show("error", d.error || "Save failed");
+  }
+};
+
+document.getElementById("del").onclick = async () => {
+  if (!confirm("Delete this item? A backup will be made.")) return;
+  const res = await fetch(`/api/inventory/${ITEM_ID}`, {method:"DELETE"});
+  if (res.ok) { show("success","Deleted."); setTimeout(()=> location.href="/admin/inventory", 400); }
+  else {
+    const d = await res.json().catch(()=> ({}));
+    show("error", d.error || "Delete failed");
+  }
+};
+
+loadItem();
+</script>
+
+
+{% endblock %}

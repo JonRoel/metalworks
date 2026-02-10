@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>{{ title or "MetalWorks Inventory" }}</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+  <aside class="sidebar">
+  <div class="sidebar-header">
+    <h1>MetalWorks</h1>
+    <p>Inventory System</p>
+  </div>
+
+  {% if is_admin %}
+    <div class="nav-section">
+      <div class="nav-section-title">Admin</div>
+      <a class="nav-item {% if active=='admin_inventory' %}active{% endif %}" href="/admin/inventory">Inventory</a>
+      <a class="nav-item {% if active=='admin_requests' %}active{% endif %}" href="/admin/requests">Pending Requests</a>
+      <a class="nav-item {% if active=='admin_add' %}active{% endif %}" href="/admin/add">Add Inventory</a>
+      <a class="nav-item {% if active=='admin_audit' %}active{% endif %}" href="/admin/audit">Audit Log</a>
+      <a class="nav-item {% if active=='admin_fields' %}active{% endif %}" href="/admin/fields">Field Management</a>
+      <a class="nav-item {% if active=='admin_upload' %}active{% endif %}" href="/admin/upload">Upload CSV</a>
+    </div>
+    <div class="nav-section">
+      <a class="nav-item" href="/admin/logout">Logout</a>
+    </div>
+  {% else %}
+    <div class="nav-section">
+      <div class="nav-section-title">Shop</div>
+      <a class="nav-item {% if active=='shop_inventory' %}active{% endif %}" href="/shop/inventory">Inventory View</a>
+      <a class="nav-item {% if active=='shop_adjustment' %}active{% endif %}" href="/shop/adjustment">SKU Adjustment</a>
+      <a class="nav-item {% if active=='shop_new_sku' %}active{% endif %}" href="/shop/new-sku">New SKU</a>
+    </div>
+
+    <div class="nav-section">
+      <div class="nav-section-title">Admin</div>
+      <a class="nav-item {% if active=='admin_login' %}active{% endif %}" href="/admin/login">Admin Login</a>
+    </div>
+  {% endif %}
+</aside>
+
+
+  <main class="main-content">
+    {% block content %}{% endblock %}
+  </main>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+  {% block scripts %}{% endblock %}
+</body>
+</html>

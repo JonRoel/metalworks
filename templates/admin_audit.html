@@ -1,0 +1,130 @@
+{% extends "base.html" %}
+{% set title = "Admin - Audit Log" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Audit Log</h1>
+  <p>Tracks approved requests and admin changes.</p>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+
+  <div class="search-bar">
+    <input id="sku" class="search-input" placeholder="Filter by SKU (e.g. 0001)"/>
+    <button class="btn" id="filterBtn">Filter</button>
+    <button class="btn btn-secondary" id="clearBtn">Clear</button>
+  </div>
+
+  <div id="logList"></div>
+</div>
+
+<div id="modal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="mTitle">Audit Details</h2>
+      <button class="modal-close" id="mClose">×</button>
+    </div>
+    <div class="modal-body" id="mBody"></div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function show(type, text){ document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`; }
+
+const modal = document.getElementById("modal");
+document.getElementById("mClose").onclick = () => modal.classList.remove("active");
+modal.addEventListener("click", (e)=>{ if(e.target === modal) modal.classList.remove("active"); });
+
+function safeParse(s){
+  try { return s ? JSON.parse(s) : null; } catch(e){ return null; }
+}
+
+const FIELDS = ["material","length","location","quantity","weight","supplier","po_number","notes"];
+
+function diffTable(oldD, newD){
+  oldD = oldD || {};
+  newD = newD || {};
+  let rows = "";
+  for (const f of FIELDS){
+    const o = oldD[f];
+    const n = newD[f];
+    if (String(o ?? "") !== String(n ?? "")){
+      rows += `<tr>
+        <td><b>${f}</b></td>
+        <td>${o ?? ""}</td>
+        <td>${n ?? ""}</td>
+      </tr>`;
+    }
+  }
+  if (!rows) rows = `<tr><td colspan="3">No field-level changes recorded.</td></tr>`;
+
+  return `<div class="table-container">
+    <table>
+      <thead><tr><th>Field</th><th>Old</th><th>New</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>
+  </div>`;
+}
+
+function card(log){
+  return `
+    <div class="request-card" style="cursor:pointer;" data-id="${log.id}">
+      <div class="request-header">
+        <div><b>${log.action}</b> ${log.sku ? " - " + log.sku : ""}</div>
+        <div style="color:#718096; font-size:0.9em;">${log.created_at || ""}</div>
+      </div>
+      <div style="color:#718096; font-size:0.9em;">User: ${log.actor || ""}</div>
+    </div>
+  `;
+}
+
+let currentLogs = [];
+
+async function load(){
+  const sku = document.getElementById("sku").value.trim();
+  const url = sku ? `/api/audit?sku=${encodeURIComponent(sku)}&limit=200` : `/api/audit?limit=200`;
+  const res = await fetch(url);
+
+  if (!res.ok){
+    show("error", "Not authorized or server error.");
+    return;
+  }
+
+  const data = await res.json();
+  currentLogs = data;
+
+  const list = document.getElementById("logList");
+  if (!data.length){
+    list.innerHTML = `<div class="empty-state">No audit entries found.</div>`;
+    return;
+  }
+
+  list.innerHTML = data.map(card).join("");
+
+  document.querySelectorAll("[data-id]").forEach(el => el.onclick = () => {
+    const id = el.getAttribute("data-id");
+    const log = currentLogs.find(x => String(x.id) === String(id));
+    const oldD = safeParse(log.old_data);
+    const newD = safeParse(log.new_data);
+
+    document.getElementById("mTitle").textContent = `Audit #${log.id} — ${log.action}`;
+    document.getElementById("mBody").innerHTML =
+      `<div class="message message-info">
+        <b>SKU:</b> ${log.sku || ""}<br/>
+        <b>Time:</b> ${log.created_at || ""}<br/>
+        <b>Actor:</b> ${log.actor || ""}
+      </div>` + diffTable(oldD, newD);
+
+    modal.classList.add("active");
+  });
+}
+
+document.getElementById("filterBtn").onclick = () => load();
+document.getElementById("clearBtn").onclick = () => { document.getElementById("sku").value=""; load(); };
+
+load();
+</script>
+{% endblock %}

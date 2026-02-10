@@ -1,0 +1,15 @@
+## Adding new drop down fields
+
+What you’ll do later when you add new dropdown columns
+
+When you add something like "grade" to inventory:
+
+Add column uom in inventory database table (or start with a UI-only field, created in the admin Field Generator page)
+
+Populate lookup_values table with field_key = grade
+
+Use populateLookupSelect("grade", "grade", currentValue) on any form page inside the <script> </script>
+
+And Field Management will automatically show uom in the dropdown.
+
+Note that the field id must match your script - in the example -> id=grade

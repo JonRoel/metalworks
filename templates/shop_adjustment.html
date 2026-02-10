@@ -1,0 +1,201 @@
+{% extends "base.html" %}
+{% set title = "Shop - SKU Adjustment" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>SKU Adjustment</h1>
+  <p>Submit an adjustment request for an existing SKU.</p>
+</div>
+
+<div class="content-card" style="padding:0; box-shadow:none; background:transparent;">
+  <div class="content-card" style="margin-bottom:20px;">
+    <h2 style="margin-bottom:10px;">Find SKU</h2>
+    <div class="search-bar">
+      <input id="skuSearch" class="search-input" placeholder="Search SKU (e.g. 0001)" />
+      <button class="btn" id="skuSearchBtn">Search</button>
+      <button class="btn btn-secondary" id="skuClearBtn">Clear</button>
+    </div>
+
+    <div class="table-container">
+      <table id="skuResults">
+        <thead>
+          <tr><th>SKU</th><th>Material</th><th>Grade</th><th>Description</th><th>Length</th><th>Location</th><th>Qty</th><th></th></tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+
+  <div class="form-grid">
+    <div class="form-group"><label>SKU</label><input id="sku" placeholder=""></div>
+    <div class="form-group"><label>Material</label><select id="material" class="searchable" style="text-transform: uppercase;"></select></div>
+    <div class="form-group"><label>Grade</label><select id="grade" class="searchable" style="text-transform: uppercase;"></select></div>
+    <div class="form-group"><label>Description</label><select id="description" class="searchable" style="text-transform: uppercase;"></select></div>
+    <div class="form-group"><label>Length ()</label><input id="length" type="number" step=""></div>
+    <div class="form-group"><label>Location</label><select class="searchable" id="location"></select></div>
+    <div class="form-group"><label>Quantity</label><input id="quantity" type="number" step="1" value="1"></div>
+    <div class="form-group"><label>Notes</label><textarea id="notes" style="text-transform: uppercase;"></textarea></div>
+  </div>
+
+  <button class="btn" id="submit">Submit Request</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function show(type, text){
+  document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`;
+}
+
+// Build maps so tables can show labels but still store codes
+async function loadLookupMap(fieldKey){
+  const res = await fetch(`/api/lookups/${encodeURIComponent(fieldKey)}`);
+  const items = await res.json().catch(()=> []);
+  const map = {};
+  for (const it of items) map[it.code] = it.label;
+  return map;
+}
+
+let materialMap = {};
+let gradeMap = {};
+let descMap = {};
+let locationMap = {};
+
+// Initialize dropdowns + maps once
+async function initPage(){
+  await populateLookupSelect("material", "material", "");
+  await populateLookupSelect("grade", "grade", "");
+  await populateLookupSelect("description", "description", "");
+  await populateLookupSelect("location", "location", "");
+
+  // IMPORTANT: only after options exist
+  initSearchableSelects();
+
+  // then load maps if you’re using them
+  materialMap = await loadLookupMap("material");
+  gradeMap = await loadLookupMap("grade");
+  descMap = await loadLookupMap("description");
+  locationMap = await loadLookupMap("location");
+}
+
+async function fillForm(it) {
+  // Make sure dropdown options exist BEFORE assigning values
+  await populateLookupSelect("material", "material", it.material || "");
+  await populateLookupSelect("grade", "grade", it.grade || "");
+  await populateLookupSelect("description", "description", it.description || "");
+  await populateLookupSelect("location", "location", it.location || "");
+
+  // If you’re using searchable wrapper, re-init after repopulating
+  initSearchableSelects();
+
+  document.getElementById("sku").value = it.sku || "";
+  document.getElementById("length").value = it.length ?? "";
+  document.getElementById("quantity").value = it.quantity ?? 1;
+
+  show("info", "Loaded current SKU data. Edit only the fields you want to change.");
+}
+
+async function populateLookupSelect(fieldKey, elementId, selected="") {
+  const res = await fetch(`/api/lookups/${encodeURIComponent(fieldKey)}`);
+  const items = await res.json();
+
+  const el = document.getElementById(elementId);
+  el.innerHTML =
+    `<option value=""></option>` +
+    items.map(it => `<option value="${it.code}">${it.label}</option>`).join("");
+
+  el.value = selected || "";
+
+  // 🔥 critical: sync any listeners / searchable wrapper
+  el.dispatchEvent(new Event("change"));
+}
+
+async function runSkuSearch() {
+  const q = document.getElementById("skuSearch").value.trim();
+  if (!q) { show("error","Enter a SKU to search."); return; }
+
+  const res = await fetch(`/api/inventory?q=${encodeURIComponent(q)}`);
+  const items = await res.json().catch(()=> []);
+  const tbody = document.querySelector("#skuResults tbody");
+  tbody.innerHTML = "";
+
+  if (!items.length) {
+    tbody.innerHTML = `<tr><td colspan="8">No results.</td></tr>`;
+    return;
+  }
+
+  for (const it of items) {
+    const tr = document.createElement("tr");
+
+    // Display LABELS in table, but keep underlying it.* codes for fillForm()
+    const materialLabel = materialMap[it.material] || it.material || "";
+    const gradeLabel = gradeMap[it.grade] || it.grade || "";
+    const descLabel = descMap[it.description] || it.description || "";
+    const locLabel = locationMap[it.location] || it.location || "";
+
+    tr.innerHTML = `
+      <td>${it.sku}</td>
+      <td>${materialLabel}</td>
+      <td>${gradeLabel}</td>
+      <td>${descLabel}</td>
+      <td>${it.length ?? ""}</td>
+      <td>${locLabel}</td>
+      <td>${it.quantity ?? ""}</td>
+      <td><button class="btn btn-edit" style="float:right;">Use this data</button></td>
+    `;
+    tr.querySelector("button").onclick = () => fillForm(it);
+    tbody.appendChild(tr);
+  }
+}
+
+document.getElementById("skuSearchBtn").onclick = (e) => { e.preventDefault(); runSkuSearch(); };
+document.getElementById("skuClearBtn").onclick = (e) => {
+  e.preventDefault();
+  document.getElementById("skuSearch").value = "";
+  document.querySelector("#skuResults tbody").innerHTML = "";
+};
+document.getElementById("skuSearch").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); runSkuSearch(); }
+});
+
+document.getElementById("submit").onclick = async () => {
+  const payload = {
+    request_type: "adjust",
+    sku: document.getElementById("sku").value.trim(),
+
+    // IMPORTANT: these must be CODES from the selects (not labels)
+    material: document.getElementById("material").value,
+    grade: document.getElementById("grade").value,
+    description: document.getElementById("description").value,
+
+    length: document.getElementById("length").value,
+    location: document.getElementById("location").value,
+    quantity: document.getElementById("quantity").value,
+    notes: document.getElementById("notes").value.trim()
+  };
+
+  if (!payload.sku) { show("error","SKU is required."); return; }
+
+  const res = await fetch("/api/requests/submit", {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  const data = await res.json().catch(()=> ({}));
+  if (res.ok && data.success) {
+    show("success","Request submitted.");
+  } else {
+    show("error", data.error || "Failed to submit request");
+  }
+};
+
+// Boot
+initPage();
+</script>
+
+{% endblock %}

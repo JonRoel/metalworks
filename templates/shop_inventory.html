@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% set title = "Shop - Inventory View" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Inventory View</h1>
+  <p>Search and view inventory details.</p>
+</div>
+
+<div class="content-card">
+  <div class="search-bar" style="align-items:center;">
+    <input id="q" class="search-input" placeholder="Quick search (SKU/material/location)..." />
+    <button class="btn" id="searchBtn">Search</button>
+    <button class="btn btn-secondary" id="clearBtn">Clear</button>
+  </div>
+  <div class="search-divider"></div>
+  <div class="search-bar" style="align-items:center;">
+    <input class="search-input" id="f_sku" placeholder="Filter SKU" style="width:100%; padding:8px;">
+    <input class="search-input" id="f_material" placeholder="Filter Material" style="width:100%; padding:8px;">
+    <select class="search-input" id="f_location" style="width:100%; padding:8px;">
+    <option value=""></option>
+    </select>
+  </div>
+  <label style="display:flex; gap:8px; align-items:center; margin-left:auto; color:#4a5568;">
+    <input type="checkbox" id="showZero">
+    Show Out of Stock items
+  </label>
+</div>
+
+<div class="content-card">
+  <!-- <div class="search-bar" style="align-items:center;">
+    <input id="q" class="search-input" placeholder="Quick search (SKU/material/location)..." />
+    <button class="btn" id="searchBtn">Search</button>
+    <button class="btn btn-secondary" id="clearBtn">Clear</button>
+
+    <label style="display:flex; gap:8px; align-items:center; margin-left:auto; color:#4a5568;">
+      <input type="checkbox" id="showZero">
+      Show Out of Stock items
+    </label>
+  </div> -->
+
+  <div class="table-container">
+    <table id="table">
+      <thead>
+        <!-- <tr>
+          <td><input id="f_sku" placeholder="Filter SKU" style="width:100%; padding:8px;"></td>
+          <td><input id="f_material" placeholder="Filter Material" style="width:100%; padding:8px;"></td>
+          <th></th>
+          <td><input id="f_location" placeholder="Filter Location" style="width:100%; padding:8px;"></td>
+          <td></td>
+        </tr> -->
+        <tr>
+          <th data-sort="sku" class="sortable">SKU</th>
+          <th data-sort="material" class="sortable">Material</th>
+          <th data-sort="length" class="sortable">Length</th>
+          <th data-sort="location" class="sortable">Location</th>
+          <th data-sort="quantity" class="sortable">Qty</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div id="modal" class="modal">
+  <div class="modal-content">
+    <div class="modal-header">
+      <h2 id="mTitle">Item</h2>
+      <button class="modal-close" id="mClose">×</button>
+    </div>
+    <div class="modal-body">
+      <div class="detail-grid" id="mBody"></div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const modal = document.getElementById("modal");
+document.getElementById("mClose").onclick = () => modal.classList.remove("active");
+modal.addEventListener("click", (e) => { if (e.target === modal) modal.classList.remove("active"); });
+
+function detail(label, value) {
+  return `<div class="detail-item">
+    <div class="detail-label">${label}</div>
+    <div class="detail-value">${value ?? ""}</div>
+  </div>`;
+}
+
+// Map code and label so we see label only in the table
+
+async function loadLookupMap(fieldKey) {
+  const res = await fetch(`/api/lookups/${encodeURIComponent(fieldKey)}`);
+  const items = await res.json();
+  const map = {};
+  for (const it of items) map[it.code] = it.label;
+  return map;
+}
+
+
+populateLookupFilter("location", "f_location");
+
+// state
+let sortCol = "sku";
+let sortDir = "asc";
+
+function getFilters() {
+  return {
+    q: document.getElementById("q").value.trim(),
+    include_zero: document.getElementById("showZero").checked ? "true" : "false",
+    sku: document.getElementById("f_sku").value.trim(),
+    material: document.getElementById("f_material").value.trim(),
+    location: document.getElementById("f_location").value.trim(),
+    sort: sortCol,
+    dir: sortDir
+  };
+}
+
+function toQuery(params) {
+  const usp = new URLSearchParams();
+  for (const [k,v] of Object.entries(params)) {
+    if (v !== "" && v != null) usp.set(k, v);
+  }
+  return usp.toString();
+}
+
+async function load() {
+  const qs = toQuery(getFilters());
+  const url = qs ? `/api/inventory?${qs}` : "/api/inventory";
+  const items = await (await fetch(url)).json();
+
+  const tbody = document.querySelector("#table tbody");
+  tbody.innerHTML = "";
+
+  for (const it of items) {
+    const tr = document.createElement("tr");
+    tr.className = "clickable";
+    tr.innerHTML = `<td>${it.sku}</td><td>${it.material}</td><td>${it.length}</td><td>${it.location}</td><td>${it.quantity ?? ""}</td>`;
+    tr.onclick = () => {
+      document.getElementById("mTitle").textContent = it.sku;
+      document.getElementById("mBody").innerHTML =
+        detail("Material", it.material) +
+        detail("Length", it.length) +
+        detail("Location", it.location) +
+        detail("Quantity", it.quantity) +
+        detail("Weight", it.weight) +
+        detail("Supplier", it.supplier) +
+        detail("PO Number", it.po_number) +
+        detail("Notes", it.notes);
+      modal.classList.add("active");
+    };
+    tbody.appendChild(tr);
+  }
+}
+
+// Sorting
+document.querySelectorAll("th.sortable").forEach(th => {
+  th.style.cursor = "pointer";
+  th.onclick = () => {
+    const col = th.getAttribute("data-sort");
+    if (sortCol === col) sortDir = (sortDir === "asc" ? "desc" : "asc");
+    else { sortCol = col; sortDir = "asc"; }
+    load();
+  };
+});
+
+// Global controls
+document.getElementById("searchBtn").onclick = () => load();
+document.getElementById("clearBtn").onclick = () => {
+  document.getElementById("q").value = "";
+  document.getElementById("f_sku").value = "";
+  document.getElementById("f_material").value = "";
+  document.getElementById("f_location").value = "";
+  document.getElementById("showZero").checked = false;
+  sortCol = "sku"; sortDir = "asc";
+  load();
+};
+document.getElementById("showZero").onchange = () => load();
+
+// Per-column filter live reload (debounced)
+let t = null;
+function debounceLoad() {
+  clearTimeout(t);
+  t = setTimeout(load, 250);
+}
+["f_sku","f_material","q"].forEach(id => {
+  document.getElementById("f_location").addEventListener("change", load);
+  document.getElementById(id).addEventListener("input", debounceLoad);
+});
+
+load();
+</script>
+
+{% endblock %}
+
+
+<!-- <td data-code="${it.location}">${locationMap[it.location] || it.location}</td> -->

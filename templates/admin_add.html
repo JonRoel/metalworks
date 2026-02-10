@@ -1,0 +1,156 @@
+{% extends "base.html" %}
+{% set title = "Admin - Add Inventory" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Add Inventory</h1>
+  <p>Create a new inventory item.</p>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+
+  <div class="form-grid">
+    <div class="form-group"><label>SKU</label><input id="sku" readonly></div>
+    <div class="form-group"><label>Material</label><select class="searchable" id="material"></select></div>
+    <div class="form-group"><label>Grade</label><select class="searchable" id="grade"></select></div>
+    <div class="form-group"><label>Description</label><select class="searchable" id="description"></select></div>
+    <div class="form-group"><label>Length (ft)</label><input id="length" type="number" step="0.5"></div>
+    <div class="form-group"><label>Unit</label><input id="unit" value="ft" readonly></div>
+    <div class="form-group"><label>Location</label><select class="searchable" id="location"></select></div>
+    <div class="form-group"><label>Quantity</label><input id="quantity" type="number" step="1" value="1"></div>
+    <div class="form-group"><label>lbs/ft</label><input id="lbs_per_ft" type="number" step="0.01"></div>
+    <div class="form-group"><label>Total Weight (lbs)</label><input id="weight" type="number" step="0.01" readonly></div>
+    <div class="form-group"><label>Supplier</label><input id="supplier"></div>
+    <div class="form-group"><label>PO Number</label><input id="po_number"></div>
+    <div class="form-group"><label>Cost / lb</label><input id="cost_lb" type="number" step="0.01"></div>
+    <div class="form-group"><label>Notes</label><textarea id="notes"></textarea></div>
+  </div>
+
+  <button class="btn btn-success" id="save">Save</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+
+// Automatically gets next sku number and autofills sku field
+async function generateSKU(){
+  const data = await (await fetch("/api/next-sku")).json();
+  document.getElementById("sku").value = data.sku || "";
+}
+
+generateSKU();
+
+// {lbs_per_ft: "2.45"}
+
+function show(type, text){ document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`; }
+
+// Dropdown field populators
+populateLookupSelect("location", "location");
+populateLookupSelect("grade", "grade");
+populateLookupSelect("material", "material");
+initSearchableSelects();
+
+// Auto Calculate/fill lbs/per foot based on meta_json field in value_lookup table and length in ft
+// Add logic here later if we need to adjust to calculate inches or feet
+
+
+let descLbsMap = {}; // description_code -> lbs/ft
+
+async function loadDescriptionLookup(selected = "") {
+  const res = await fetch("/api/lookups/description");
+  const items = await res.json();
+
+  // Build map
+  descLbsMap = {};
+  for (const it of items) {
+    if (it.code != null && it.meta_num != null) {
+      descLbsMap[String(it.code)] = it.meta_num;
+    }
+  }
+
+  // Populate select
+  const sel = document.getElementById("description");
+  sel.innerHTML = `<option value=""></option>` + items.map(it =>
+    `<option value="${it.code}">${it.label}</option>`
+  ).join("");
+
+  if (selected) sel.value = selected;
+
+  // Make searchable (your vanilla searchable select)
+  initSearchableSelects();
+}
+
+function recalcTotalWeight() {
+  const len = parseFloat(document.getElementById("length").value || "0");
+  const qty = parseFloat(document.getElementById("quantity").value || "0");
+  const lbf = parseFloat(document.getElementById("lbs_per_ft").value || "0");
+
+  if (len > 0 && qty > 0 && lbf > 0) {
+    document.getElementById("weight").value = (len * qty * lbf).toFixed(2);
+  } else {
+    document.getElementById("weight").value = "";
+  }
+}
+
+function wireWeightAutoCalc() {
+  const desc = document.getElementById("description");
+  const len  = document.getElementById("length");
+  const qty  = document.getElementById("quantity");
+  const lbf  = document.getElementById("lbs_per_ft");
+
+  if (desc) desc.addEventListener("change", () => {
+    const code = desc.value;
+    if (code && descLbsMap[code] != null) {
+      lbf.value = descLbsMap[code];
+    }
+    recalcTotalWeight();
+  });
+
+  if (len) len.addEventListener("input", recalcTotalWeight);
+  if (qty) qty.addEventListener("input", recalcTotalWeight);
+  if (lbf) lbf.addEventListener("input", recalcTotalWeight);
+}
+
+
+// End field calculations
+
+// Save data add new fields here otherwise will not save to database
+
+document.getElementById("save").onclick = async () => {
+  const payload = {
+    sku: document.getElementById("sku").value.trim(),
+    material: document.getElementById("material").value.trim(),
+    grade: document.getElementById("grade").value.trim(),
+    description: document.getElementById("description").value.trim(),
+    length: document.getElementById("length").value,
+    unit: document.getElementById("unit").value.trim(),
+    location: document.getElementById("location").value.trim(),
+    quantity: document.getElementById("quantity").value,
+    lbs_per_ft: document.getElementById("lbs_per_ft").value.trim(),
+    weight: document.getElementById("weight").value,
+    supplier: document.getElementById("supplier").value.trim(),
+    po_number: document.getElementById("po_number").value.trim(),
+    cost_lb: document.getElementById("cost_lb").value,
+    notes: document.getElementById("notes").value.trim(),
+  };
+
+  const res = await fetch("/api/inventory", {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+  const data = await res.json().catch(()=> ({}));
+  if (res.ok) { show("success","Saved."); setTimeout(()=> location.href="/admin/inventory", 400); }
+  else show("error", data.error || "Failed to save");
+};
+
+// load field calculator
+onload = (async () => {
+  await loadDescriptionLookup("");
+  wireWeightAutoCalc();
+})();
+
+</script>
+{% endblock %}

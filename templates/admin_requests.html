@@ -1,0 +1,225 @@
+{% extends "base.html" %}
+{% set title = "Admin - Pending Requests" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Pending Requests</h1>
+  <p>Approve or decline shop requests.</p>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+  <div id="list"></div>
+  <div id="editModal" class="modal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>Edit Request</h2>
+        <button class="modal-close" id="editClose">×</button>
+      </div>
+      <div class="modal-body">
+        <div id="editInfo" style="margin-bottom:12px;"></div>
+        <div id="editSkuRow" class="detail-item" style="margin-bottom:15px;">
+          <div class="detail-label">SKU</div>
+          <div class="detail-value" id="e_sku_display"></div>
+        </div>
+
+        <div class="form-grid">
+          <div class="form-group"><label>Material</label><input id="e_material"></div>
+          <div class="form-group"><label>Length</label><input id="e_length" type="number" step="1"></div>
+          <div class="form-group"><label>Location</label><select id="e_location"></select></div>
+          <div class="form-group"><label>Quantity</label><input id="e_quantity" type="number" step="1"></div>
+          <div class="form-group"><label>Weight</label><input id="e_weight" type="number" step="1"></div>
+          <div class="form-group"><label>Supplier</label><input id="e_supplier"></div>
+          <div class="form-group"><label>PO Number</label><input id="e_po_number"></div>
+          <div class="form-group" style="grid-column: 1 / -1;"><label>Notes</label><textarea id="e_notes"></textarea></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="btn btn-secondary" id="editCancel">Cancel</button>
+        <button class="btn btn-success" id="editApprove">Approve (with edits)</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentEditId = null;
+let currentEditType = null;
+let currentEditSku = null;
+
+const editModal = document.getElementById("editModal");
+const closeEdit = () => editModal.classList.remove("active");
+
+document.getElementById("editClose").onclick = closeEdit;
+document.getElementById("editCancel").onclick = closeEdit;
+editModal.addEventListener("click", (e) => { if (e.target === editModal) closeEdit(); });
+
+function setEditFields(d) {
+  document.getElementById("e_material").value = d.material ?? "";
+  document.getElementById("e_length").value = d.length ?? "";
+  document.getElementById("e_location").value = d.location ?? "";
+  document.getElementById("e_quantity").value = d.quantity ?? "";
+  document.getElementById("e_weight").value = d.weight ?? "";
+  document.getElementById("e_supplier").value = d.supplier ?? "";
+  document.getElementById("e_po_number").value = d.po_number ?? "";
+  document.getElementById("e_notes").value = d.notes ?? "";
+}
+
+function show(type, text){ document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`; }
+
+function safeParse(s){
+  try { return s ? JSON.parse(s) : null; } catch(e){ return null; }
+}
+function changedRows(oldD, newD){
+  const fields = ["material","length","location","quantity","weight","supplier","po_number","notes"];
+  let html = `<table style="width:100%; border-collapse:collapse;">
+    <thead>
+      <tr><th>Field</th>
+        <th>Current</th>
+        <th>Change to</th></tr>
+      </thead>
+    <tbody>`;
+  for (const f of fields){
+    const o = oldD ? oldD[f] : "";
+    const n = newD ? newD[f] : "";
+    const different = String(o ?? "") !== String(n ?? "");
+    if (different){
+      html += `<tr>
+        <td><b>${f}</b></td>
+        <td>${o ?? ""}</td>
+        <td>${n ?? ""}</td>
+      </tr>`;
+    }
+  }
+  html += `</tbody></table>`;
+  return html;
+}
+
+function card(r) {
+  const oldD = safeParse(r.old_data);
+  const newD = safeParse(r.new_data);
+
+  const compare = (r.request_type === "adjust")
+    ? changedRows(oldD, newD)
+    : `<div class="detail-grid">
+        <div class="detail-item"><div class="detail-label">SKU</div><div class="detail-value">${r.sku}</div></div>
+        <div class="detail-item"><div class="detail-label">Material</div><div class="detail-value">${r.material}</div></div>
+        <div class="detail-item"><div class="detail-label">Length</div><div class="detail-value">${r.length}</div></div>
+        <div class="detail-item"><div class="detail-label">Location</div><div class="detail-value">${r.location}</div></div>
+      </div>`;
+
+  return `
+  <div class="request-card">
+    <div class="request-header">
+      <div><b>${r.request_type.toUpperCase()}</b> ${r.sku ? " - " + r.sku : ""}</div>
+    </div>
+
+    <div style="margin-bottom:12px;">${compare}</div>
+
+    <div class="request-actions">
+      <button class="btn btn-success" data-approve="${r.id}">Approve</button>
+      <button class="btn btn-secondary" data-edit="${r.id}">Edit</button>
+      <button class="btn btn-danger" data-decline="${r.id}">Decline</button>
+    </div>
+
+  </div>`;
+}
+
+async function load() {
+  const res = await fetch("/api/requests/pending");
+  const data = await res.json();
+  const list = document.getElementById("list");
+
+  if (!data.length) { list.innerHTML = `<div class="empty-state">No pending requests.</div>`; return; }
+  list.innerHTML = data.map(card).join("");
+
+  document.querySelectorAll("[data-approve]").forEach(btn => btn.onclick = async () => {
+    const id = btn.getAttribute("data-approve");
+    const r = await fetch(`/api/requests/${id}/approve`, {method:"POST"});
+    if (r.ok) { show("success","Approved."); load(); } else show("error","Approve failed");
+  });
+
+  document.querySelectorAll("[data-decline]").forEach(btn => btn.onclick = async () => {
+    const id = btn.getAttribute("data-decline");
+    const r = await fetch(`/api/requests/${id}/decline`, {method:"POST"});
+    if (r.ok) { show("success","Declined."); load(); } else show("error","Decline failed");
+  });
+
+  document.querySelectorAll("[data-edit]").forEach(btn => btn.onclick = async () => {
+  const id = btn.getAttribute("data-edit");
+  currentEditId = id;
+
+  // Find the request object from current data
+  const req = data.find(x => String(x.id) === String(id));
+    currentEditType = req.request_type;
+    currentEditSku = req.sku;
+    document.getElementById("e_sku_display").textContent = req.sku || "";
+    document.getElementById("editSkuRow").style.display = req.sku ? "block" : "none";
+
+    const newD = safeParse(req.new_data) || req; // fallback
+    document.getElementById("editInfo").innerHTML =
+      `<div class="message message-info">Editing request <b>#${id}</b> ${req.sku ? "for SKU <b>" + req.sku + "</b>" : ""}</div>`;
+
+    // For adjustments, new_data may only include changed fields
+    // We'll prefill using: old_data merged with new_data, so form shows full current values.
+    const oldD = safeParse(req.old_data) || {};
+    const merged = { ...oldD, ...newD };
+
+    // Populate location dropdown and select merged location
+    await populateLookupSelect("location", "e_location", merged.location || "");
+    // await populateLocationSelect("e_location", merged.location || "");
+    initSearchableSelects(document.getElementById("editModal"));
+
+    // Fill the rest of the fields (but DO NOT overwrite location now)
+    setEditFields({ ...merged, location: undefined });
+
+    editModal.classList.add("active");
+
+  });
+
+}
+
+document.getElementById("editApprove").onclick = async () => {
+  
+  if (!currentEditId) return;
+
+  // For adjust: send only fields admin *actually changed*? simplest v1: send all non-empty
+  const overrides = {
+    material: document.getElementById("e_material").value.trim(),
+    length: document.getElementById("e_length").value,
+    location: document.getElementById("e_location").value.trim(),
+    quantity: document.getElementById("e_quantity").value,
+    weight: document.getElementById("e_weight").value,
+    supplier: document.getElementById("e_supplier").value.trim(),
+    po_number: document.getElementById("e_po_number").value.trim(),
+    notes: document.getElementById("e_notes").value.trim(),
+  };
+
+  // Clean empties so backend treats them as "not provided"
+  for (const k of Object.keys(overrides)) {
+    if (overrides[k] === "" || overrides[k] === null) delete overrides[k];
+  }
+
+  const res = await fetch(`/api/requests/${currentEditId}/approve`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(overrides)
+  });
+
+
+  if (res.ok) {
+  show("success", "Approved with edits.");
+  closeEdit();
+  load();
+} else {
+  const d = await res.json().catch(()=> ({}));
+  show("error", d.error || "Approve failed.");
+}
+
+};
+
+load();
+</script>
+{% endblock %}

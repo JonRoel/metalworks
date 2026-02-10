@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% set title = "Admin Login" %}
+
+{% block content %}
+<div class="login-container">
+  <h2>🔒 Admin Login</h2>
+  <div id="message"></div>
+
+  <form id="login-form" class="form">
+    <div class="form-group">
+      <label>Password</label>
+      <input id="password" type="password" required autofocus>
+    </div>
+    <button class="btn" type="submit" style="width:100%;">Login</button>
+  </form>
+
+  <div class="hint">
+    Demo password: <b>admin123</b> (change via METALWORKS_ADMIN_PASSWORD)
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+document.getElementById("login-form").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const password = document.getElementById("password").value;
+  const res = await fetch("/admin/login", {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({password})
+  });
+
+  const msg = document.getElementById("message");
+  if (res.ok) {
+    window.location.href = "/admin/inventory";
+    return;
+  }
+  const data = await res.json().catch(() => ({}));
+  msg.innerHTML = `<div class="message message-error">${data.message || "Login failed"}</div>`;
+});
+</script>
+{% endblock %}

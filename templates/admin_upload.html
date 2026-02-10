@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% set title = "Admin - Upload CSV" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Upload CSV</h1>
+  <p>Import inventory rows. Can replace or merge.</p>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+
+  <div class="form-group">
+    <label>CSV File</label>
+    <input type="file" id="file" accept=".csv">
+  </div>
+
+  <div class="form-group" style="display:flex; align-items:center; gap:10px;">
+    <input type="checkbox" id="replace" style="width:2%">
+    <label for="replace" style="margin:0;">Replace existing inventory (creates a backup first)</label>
+  </div>
+
+  <button class="btn" id="upload">Upload</button>
+  <button class="btn btn-secondary" id="backup">Create Backup Now</button>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function show(type, text){ document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`; }
+
+document.getElementById("backup").onclick = async () => {
+  const res = await fetch("/api/backup", {method:"POST"});
+  const data = await res.json().catch(()=> ({}));
+  if (res.ok) show("success", "Backup created: " + (data.path || ""));
+  else show("error", data.error || "Backup failed");
+};
+
+document.getElementById("upload").onclick = async () => {
+  const f = document.getElementById("file").files[0];
+  if (!f) { show("error","Pick a CSV file."); return; }
+  const replace = document.getElementById("replace").checked;
+
+  const fd = new FormData();
+  fd.append("file", f);
+  fd.append("replace_existing", replace ? "true" : "false");
+
+  const res = await fetch("/api/upload/inventory", {method:"POST", body: fd});
+  const data = await res.json().catch(()=> ({}));
+  if (res.ok && data.success) show("success", `Imported ${data.total} rows (new: ${data.imported}, updated: ${data.updated})`);
+  else show("error", data.error || "Upload failed");
+};
+</script>
+{% endblock %}

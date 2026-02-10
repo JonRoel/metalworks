@@ -1,0 +1,354 @@
+{% extends "base.html" %}
+{% set title = "Admin - Field Management" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Field Management</h1>
+  <p>Manage dropdown values (auto-discovered from the database).</p>
+</div>
+
+<div class="content-card">
+  <div class="form-group">
+      <label>New Field Key (optional) <span class="inline-helper">i<span class="inline-helper-text">NOTE: This DOES NOT create a new field, rather a new category to be applied to a field manually.</span> </span></label>
+      <input id="newFieldKey" placeholder="e.g. supplier">
+    </div>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+
+  <div class="form-grid" style="align-items:end;">
+    <div class="form-group">
+      <label>Field</label>
+      <select id="fieldKey"></select>
+    </div>
+
+    <div class="form-group">
+      <label>Code (stored value)</label>
+      <input id="newCode" placeholder="e.g. R3-A">
+    </div>
+
+    <div class="form-group">
+      <label>Label (display)</label>
+      <input id="newLabel" placeholder="e.g. Rack 3 - A">
+    </div>
+
+    <div class="form-group">
+      <label>Sort Order</label>
+      <input id="newSort" type="number" value="0">
+    </div>
+
+    <div class="form-group" id="newMetaNumGroup" style="display:none;">
+      <label>lbs/ft</label>
+      <input id="newMetaNum" type="number" step="0.001" placeholder="e.g. 2.45">
+    </div>
+
+  </div>
+
+  <div style="display:flex; gap:10px; margin-top:10px; flex-wrap:wrap;">
+    <button class="btn btn-success" id="addBtn">+ Add Value</button>
+    <button class="btn btn-secondary" id="reloadBtn">Reload</button>
+    
+  </div>
+</div>
+
+<div class="content-card">
+  <div style="text-align: right; width: 100%; font-weight:bold;">Note: Save one edit at a time. Cannot bulk save edits.</div>
+  <div style="margin-top:25px;" class="table-container">
+    <table id="table">
+      <thead>
+        <tr>
+          <th>ID</th>
+          <th>Code</th>
+          <th>Label</th>
+          <th id="metaNumHeader" style="display:none;">lbs/ft</th>
+          <th>Sort</th>
+          <th>Active</th>
+          <th>Used</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <div style="margin-top:12px; color:#718096; font-size:0.95em;">
+    <b>Notes:</b> “Code” is what gets stored in the database. “Label” is what users see in the dropdown.
+    Disable values instead of deleting to preserve history. Delete only works if “Used” is 0.
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function show(type, text){
+  document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`;
+}
+
+function escapeHtml(s){
+  return String(s ?? "")
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+}
+
+function currentFieldKey(){
+  return document.getElementById("fieldKey").value;
+}
+
+function isMetaNumField(fk){
+  // meta_num is lbs/ft for description
+  return fk === "description";
+}
+
+function setMetaNumVisibility(){
+  const fk = currentFieldKey();
+  const showMeta = isMetaNumField(fk);
+  document.getElementById("newMetaNumGroup").style.display = showMeta ? "block" : "none";
+  document.getElementById("metaNumHeader").style.display = showMeta ? "" : "none";
+}
+
+let rows = [];
+
+async function loadFieldKeys(prefer = "location") {
+  const res = await fetch("/api/admin/field-keys");
+  if (!res.ok) {
+    const d = await res.json().catch(()=> ({}));
+    show("error", d.error || "Failed to load field keys.");
+    return;
+  }
+
+  const keys = await res.json();
+  const sel = document.getElementById("fieldKey");
+  sel.innerHTML = "";
+
+  if (!keys.length) {
+    sel.innerHTML = `<option value="">(no fields yet)</option>`;
+    setMetaNumVisibility();
+    return;
+  }
+
+  for (const k of keys) {
+    const opt = document.createElement("option");
+    opt.value = k;
+    opt.textContent = k;
+    sel.appendChild(opt);
+  }
+
+  if (keys.includes(prefer)) sel.value = prefer;
+  else sel.value = keys[0];
+
+  setMetaNumVisibility();
+}
+
+async function load(){
+  const fk = currentFieldKey();
+  if (!fk) return;
+
+  setMetaNumVisibility();
+
+  const res = await fetch(`/api/admin/fields/${encodeURIComponent(fk)}`);
+  if (!res.ok){
+    const d = await res.json().catch(()=> ({}));
+    show("error", d.error || "Failed to load field values.");
+    return;
+  }
+  rows = await res.json();
+  render();
+}
+
+function render(){
+  const fk = currentFieldKey();
+  const showMeta = isMetaNumField(fk);
+
+  const tbody = document.querySelector("#table tbody");
+  tbody.innerHTML = "";
+
+  if (!rows.length){
+    tbody.innerHTML = `<tr><td colspan="8">No values.</td></tr>`;
+    return;
+  }
+
+  for (const r of rows){
+    const used = (r.used_count ?? 0);
+
+    const metaNumCell = showMeta ? `
+      <td>
+        <input data-id="${r.id}" data-k="meta_num"
+               type="number" step="0.001"
+               value="${escapeHtml(r.meta_num ?? "")}"
+               style="width:120px; padding:8px;">
+      </td>
+    ` : ``;
+
+    const tr = document.createElement("tr");
+    tr.innerHTML = `
+      <td>${r.id}</td>
+      <td>
+        <input value="${escapeHtml(r.code)}"
+               style="width:100%; padding:8px;"
+               disabled>
+      </td>
+      <td>
+        <input data-id="${r.id}" data-k="label"
+               value="${escapeHtml(r.label)}"
+               style="width:100%; padding:8px;">
+      </td>
+      ${metaNumCell}
+      <td>
+        <input data-id="${r.id}" data-k="sort_order"
+               type="number"
+               value="${escapeHtml(r.sort_order ?? 0)}"
+               style="width:90px; padding:8px;">
+      </td>
+      
+      <td style="text-align:center;">
+        <input data-id="${r.id}" data-k="is_active"
+               type="checkbox" ${String(r.is_active) === "1" ? "checked" : ""}>
+      </td>
+      <td style="text-align:center;">${used}</td>
+      <td style="white-space:nowrap;">
+        <button class="btn btn-small" data-save="${r.id}">Save</button>
+        <button class="btn btn-danger btn-small" data-del="${r.id}">Delete</button>
+      </td>
+    `;
+    tbody.appendChild(tr);
+  }
+
+  document.querySelectorAll("[data-save]").forEach(btn => btn.onclick = async () => {
+    const id = btn.getAttribute("data-save");
+    await saveRow(id);
+  });
+
+  document.querySelectorAll("[data-del]").forEach(btn => btn.onclick = async () => {
+    const id = btn.getAttribute("data-del");
+    await deleteRow(id);
+  });
+}
+
+async function saveRow(id){
+  const row = rows.find(x => String(x.id) === String(id));
+  if (!row) return;
+
+  const labelEl = document.querySelector(`[data-id="${id}"][data-k="label"]`);
+  const sortEl  = document.querySelector(`[data-id="${id}"][data-k="sort_order"]`);
+  const activeEl= document.querySelector(`[data-id="${id}"][data-k="is_active"]`);
+  const metaEl  = document.querySelector(`[data-id="${id}"][data-k="meta_num"]`);
+
+  const payload = {
+    label: labelEl ? labelEl.value.trim() : "",
+    sort_order: sortEl ? sortEl.value : 0,
+    is_active: activeEl ? activeEl.checked : true
+  };
+
+  if (isMetaNumField(row.field_key)) {
+    const v = metaEl ? metaEl.value.trim() : "";
+    payload.meta_num = v === "" ? null : parseFloat(v);
+    if (payload.meta_num != null && Number.isNaN(payload.meta_num)) {
+      show("error", "lbs/ft must be a valid number.");
+      return;
+    }
+  } else {
+    payload.meta_num = null;
+  }
+
+  const res = await fetch(`/api/admin/field-value/${id}`, {
+    method: "PUT",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  if (res.ok){
+    show("success", "Saved.");
+    await load();
+  } else {
+    const d = await res.json().catch(()=> ({}));
+    show("error", d.error || "Save failed.");
+  }
+}
+
+async function deleteRow(id){
+  const row = rows.find(x => String(x.id) === String(id));
+  const name = row ? `${row.code} (${row.label})` : `#${id}`;
+
+  if (!confirm(`Delete ${name}? This cannot be undone.`)) return;
+
+  const res = await fetch(`/api/admin/field-value/${id}`, { method: "DELETE" });
+  const d = await res.json().catch(()=> ({}));
+
+  if (res.ok && d.success){
+    show("success", "Deleted.");
+    await load();
+  } else {
+    show("error", d.error || "Delete failed.");
+  }
+}
+
+document.getElementById("reloadBtn").onclick = () => load();
+
+document.getElementById("fieldKey").onchange = async () => {
+  document.getElementById("newCode").value = "";
+  document.getElementById("newLabel").value = "";
+  document.getElementById("newSort").value = "0";
+  document.getElementById("newMetaNum").value = "";
+  setMetaNumVisibility();
+  await load();
+};
+
+document.getElementById("addBtn").onclick = async () => {
+  const newFk = document.getElementById("newFieldKey").value.trim();
+  const fk = newFk || currentFieldKey();
+
+  const code = document.getElementById("newCode").value.trim();
+  const label = document.getElementById("newLabel").value.trim();
+  const sort_order = document.getElementById("newSort").value;
+
+  if (!fk) { show("error", "Field key is required."); return; }
+  if (!code){ show("error", "Code is required."); return; }
+
+  const payload = { code, label, sort_order };
+
+  if (isMetaNumField(fk)) {
+    const v = document.getElementById("newMetaNum").value.trim();
+    if (v !== "") {
+      const n = parseFloat(v);
+      if (Number.isNaN(n)) { show("error", "lbs/ft must be a valid number."); return; }
+      payload.meta_num = n;
+    } else {
+      payload.meta_num = null;
+    }
+  } else {
+    payload.meta_num = null;
+  }
+
+  const res = await fetch(`/api/admin/fields/${encodeURIComponent(fk)}`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify(payload)
+  });
+
+  if (res.ok){
+    show("success", "Added.");
+    document.getElementById("newCode").value = "";
+    document.getElementById("newLabel").value = "";
+    document.getElementById("newSort").value = "0";
+    document.getElementById("newMetaNum").value = "";
+    document.getElementById("newFieldKey").value = "";
+
+    await loadFieldKeys(fk);
+    await load();
+  } else {
+    const d = await res.json().catch(()=> ({}));
+    show("error", d.error || "Add failed (maybe duplicate code?).");
+  }
+};
+
+(async () => {
+  await loadFieldKeys("description");
+  await load();
+})();
+</script>
+{% endblock %}
+
