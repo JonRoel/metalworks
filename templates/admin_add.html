@@ -52,9 +52,7 @@ populateLookupSelect("grade", "grade");
 populateLookupSelect("material", "material");
 initSearchableSelects();
 
-// Auto Calculate/fill lbs/per foot based on meta_json field in value_lookup table and length in ft
-// Add logic here later if we need to adjust to calculate inches or feet
-
+// calculation requirements
 
 let descLbsMap = {}; // description_code -> lbs/ft
 
@@ -81,6 +79,8 @@ async function loadDescriptionLookup(selected = "") {
   // Make searchable (your vanilla searchable select)
   initSearchableSelects();
 }
+
+// Calculate fields
 
 function recalcTotalWeight() {
   const len = parseFloat(document.getElementById("length").value || "0");
@@ -128,7 +128,7 @@ document.getElementById("save").onclick = async () => {
     unit: document.getElementById("unit").value.trim(),
     location: document.getElementById("location").value.trim(),
     quantity: document.getElementById("quantity").value,
-    lbs_per_ft: document.getElementById("lbs_per_ft").value.trim(),
+    lbs_per_ft: document.getElementById("lbs_per_ft").value,
     weight: document.getElementById("weight").value,
     supplier: document.getElementById("supplier").value.trim(),
     po_number: document.getElementById("po_number").value.trim(),

@@ -1,0 +1,69 @@
+{% extends "base.html" %}
+{% set title = "Admin - System" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>System</h1>
+  <p>Backup policy: every 15 approvals and at least once per week.</p>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+
+  <div class="detail-grid" id="grid"></div>
+
+  <div class="page-actions" style="margin-top:20px;">
+    <button class="btn btn-secondary" id="refreshBtn">Refresh</button>
+    <button class="btn btn-success" id="backupBtn">Backup Now</button>
+    <button class="btn btn-danger" id="resetBtn">Reset Approval Counter</button>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function show(type, text){
+  document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`;
+}
+
+async function load(){
+  const res = await fetch("/api/admin/system");
+  const d = await res.json().catch(()=> ({}));
+  if (!res.ok) { show("error", d.error || "Failed to load system info"); return; }
+
+  document.getElementById("grid").innerHTML = `
+    <div class="detail-item"><div class="detail-label">Approval Counter</div><div class="detail-value">${d.approval_count}</div></div>
+    <div class="detail-item"><div class="detail-label">Last Backup</div><div class="detail-value">${d.last_backup_at || "Never"}</div></div>
+    <div class="detail-item"><div class="detail-label">Backup Interval</div><div class="detail-value">Every ${d.backup_every_approvals} approvals</div></div>
+    <div class="detail-item"><div class="detail-label">Weekly Backup</div><div class="detail-value">Every ${d.backup_every_days} days</div></div>
+  `;
+}
+
+document.getElementById("refreshBtn").onclick = load;
+
+document.getElementById("backupBtn").onclick = async () => {
+  const res = await fetch("/api/admin/system/backup-now", {method:"POST"});
+  const d = await res.json().catch(()=> ({}));
+  if (res.ok && d.success) {
+    show("success", "Backup created.");
+    load();
+  } else {
+    show("error", d.error || "Backup failed");
+  }
+};
+
+document.getElementById("resetBtn").onclick = async () => {
+  if (!confirm("Reset approval counter to 0?")) return;
+  const res = await fetch("/api/admin/system/reset-approval-counter", {method:"POST"});
+  const d = await res.json().catch(()=> ({}));
+  if (res.ok && d.success) {
+    show("success", "Approval counter reset.");
+    load();
+  } else {
+    show("error", d.error || "Reset failed");
+  }
+};
+
+load();
+</script>
+{% endblock %}

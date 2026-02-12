@@ -1,0 +1,135 @@
+{% extends "base.html" %}
+{% set title = "Admin - Reports" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Reports</h1>
+  <p>Inventory weight + estimated value (weight × cost/lb). Blank cost/lb counts as $0.</p>
+</div>
+
+<div class="content-card">
+  <div id="summary" class="detail-grid"></div>
+</div>
+
+<div class="content-card">
+  <h2>By Location</h2>
+  <div class="table-container">
+    <table id="t_location">
+      <thead><tr><th>Location</th><th>SKUs</th><th>Total Qty</th><th>Total Weight</th><th>Total Value</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="content-card">
+  <h2>By Material</h2>
+  <div class="table-container">
+    <table id="t_material">
+      <thead><tr><th>Material</th><th>SKUs</th><th>Total Qty</th><th>Total Weight</th><th>Total Value</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="content-card">
+  <h2>By Grade</h2>
+  <div class="table-container">
+    <table id="t_grade">
+      <thead><tr><th>Grade</th><th>SKUs</th><th>Total Qty</th><th>Total Weight</th><th>Total Value</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+
+<div class="content-card">
+  <h2>Top Descriptions</h2>
+  <div class="table-container">
+    <table id="t_desc">
+      <thead><tr><th>Description</th><th>SKUs</th><th>Total Qty</th><th>Total Weight</th><th>Total Value</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+function money(n){ return "$" + (Number(n || 0)).toFixed(2); }
+function num(n){ return (n === null || n === undefined) ? "" : Number(n).toFixed(2); }
+function intish(n){ return (n === null || n === undefined) ? "" : Number(n).toFixed(0); }
+
+async function loadLookupMap(fieldKey){
+  const res = await fetch(`/api/lookups/${encodeURIComponent(fieldKey)}`);
+  const items = await res.json().catch(()=> []);
+  const map = {};
+  for (const it of items) map[String(it.code)] = it.label;
+  return map;
+}
+function labelOf(map, code){
+  if (code === null || code === undefined) return "";
+  const k = String(code);
+  return map && map[k] ? map[k] : k;
+}
+
+let materialMap = {}, gradeMap = {}, descMap = {}, locationMap = {};
+
+async function initMaps(){
+  [materialMap, gradeMap, descMap, locationMap] = await Promise.all([
+    loadLookupMap("material"),
+    loadLookupMap("grade"),
+    loadLookupMap("description"),
+    loadLookupMap("location"),
+  ]);
+}
+
+function firstColLabel(firstKey, row){
+  if (firstKey === "material") return labelOf(materialMap, row.material);
+  if (firstKey === "grade") return labelOf(gradeMap, row.grade);
+  if (firstKey === "description") return labelOf(descMap, row.description);
+  if (firstKey === "location") return labelOf(locationMap, row.location);
+  return row[firstKey] ?? "";
+}
+
+async function fillTable(tableId, rows, firstColKey){
+  const tbody = document.querySelector(`#${tableId} tbody`);
+  tbody.innerHTML = rows.map(r => `
+    <tr>
+      <td>${firstColLabel(firstColKey, r)}</td>
+      <td>${intish(r.sku_count)}</td>
+      <td>${num(r.total_qty)}</td>
+      <td>${num(r.total_weight)}</td>
+      <td>${money(r.total_value)}</td>
+    </tr>
+  `).join("");
+}
+
+async function load(){
+  const summary = await (await fetch("/api/reports/summary")).json();
+  document.getElementById("summary").innerHTML = `
+    <div class="detail-item"><div class="detail-label">Rows</div><div class="detail-value">${intish(summary.total_rows)}</div></div>
+    <div class="detail-item"><div class="detail-label">In Stock Rows</div><div class="detail-value">${intish(summary.in_stock_rows)}</div></div>
+    <div class="detail-item"><div class="detail-label">Total Quantity</div><div class="detail-value">${num(summary.total_qty)}</div></div>
+    <div class="detail-item"><div class="detail-label">Total Weight</div><div class="detail-value">${num(summary.total_weight)}</div></div>
+    <div class="detail-item"><div class="detail-label">Estimated Value</div><div class="detail-value">${money(summary.total_value)}</div></div>
+  `;
+
+  const byLoc = await (await fetch("/api/reports/by_location")).json();
+  await fillTable("t_location", byLoc, "location");
+
+  const byMat = await (await fetch("/api/reports/by_material")).json();
+  await fillTable("t_material", byMat, "material");
+
+  const topDesc = await (await fetch("/api/reports/top_descriptions?limit=25")).json();
+  await fillTable("t_desc", topDesc, "description");
+
+  const byGrade = await (await fetch("/api/reports/by_grade")).json();
+  await fillTable("t_grade", byGrade, "grade");
+}
+
+(async () => {
+  await initMaps();
+  await load();
+})();
+</script>
+
+{% endblock %}

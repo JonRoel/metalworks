@@ -1,0 +1,141 @@
+{% extends "base.html" %}
+{% set title = "Admin - Import Inventory" %}
+
+{% block content %}
+<div class="page-header">
+  <h1>Import Inventory</h1>
+  <p>Preview first, then commit. Update-existing-only (annual audit).</p>
+</div>
+
+<div class="content-card">
+  <div id="msg"></div>
+
+  <div class="form-group">
+    <label>CSV File</label>
+    <input type="file" id="file" accept=".csv">
+  </div>
+
+  <div class="page-actions">
+    <button class="btn" id="previewBtn">Preview</button>
+    <button class="btn btn-success" id="commitBtn" disabled>Commit Import</button>
+    <button class="btn btn-secondary" id="backupBtn">Backup Now</button>
+  </div>
+</div>
+
+<div class="content-card">
+  <h2>Summary</h2>
+  <div id="summary" class="detail-grid"></div>
+</div>
+
+<div class="content-card">
+  <h2>Errors</h2>
+  <div id="errors"></div>
+</div>
+
+<div class="content-card">
+  <h2>Preview Rows</h2>
+  <div class="table-container">
+    <table id="prevTable">
+      <thead>
+        <tr>
+          <th>Row</th><th>SKU</th><th>Material</th><th>Grade</th><th>Description</th>
+          <th>Location</th><th>Len</th><th>Unit</th><th>Qty</th><th>Lbs/ft</th><th>Weight</th><th>Cost/lb</th><th>Value</th><th>Action</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let batchId = null;
+
+function show(type, text){
+  document.getElementById("msg").innerHTML = `<div class="message message-${type}">${text}</div>`;
+}
+function money(n){ return "$" + (Number(n||0)).toFixed(2); }
+function num(n){ return (n===null||n===undefined||n==="") ? "" : Number(n).toFixed(2); }
+
+document.getElementById("previewBtn").onclick = async () => {
+  const f = document.getElementById("file").files[0];
+  if (!f) { show("error","Choose a CSV file."); return; }
+
+  const fd = new FormData();
+  fd.append("file", f);
+
+  const res = await fetch("/api/import/preview", { method:"POST", body: fd });
+  const d = await res.json().catch(()=> ({}));
+  if (!res.ok || !d.success) {
+    show("error", d.error || "Preview failed");
+    return;
+  }
+
+  batchId = d.batch_id;
+  document.getElementById("commitBtn").disabled = (d.error_count > 0 || d.will_update === 0);
+
+  document.getElementById("summary").innerHTML = `
+    <div class="detail-item"><div class="detail-label">Will Update</div><div class="detail-value">${d.will_update}</div></div>
+    <div class="detail-item"><div class="detail-label">Errors</div><div class="detail-value">${d.error_count}</div></div>
+    <div class="detail-item"><div class="detail-label">Total Weight</div><div class="detail-value">${num(d.totals.total_weight)}</div></div>
+    <div class="detail-item"><div class="detail-label">Total Value</div><div class="detail-value">${money(d.totals.total_value)}</div></div>
+  `;
+
+  document.getElementById("errors").innerHTML = (d.errors || []).map(e =>
+    `<div class="message message-error">Row ${e.row} (SKU ${e.sku || "-"}) — ${e.error}</div>`
+  ).join("") || `<div class="empty-state">No errors.</div>`;
+
+  const tbody = document.querySelector("#prevTable tbody");
+  tbody.innerHTML = (d.preview || []).map(r => `
+    <tr>
+      <td>${r.row}</td>
+      <td>${r.sku}</td>
+      <td>${r.material}</td>
+      <td>${r.grade}</td>
+      <td>${r.description}</td>
+      <td>${r.location}</td>
+      <td>${num(r.length)}</td>
+      <td>${r.unit}</td>
+      <td>${num(r.quantity)}</td>
+      <td>${num(r.lbs_per_ft)}</td>
+      <td>${num(r.weight)}</td>
+      <td>${num(r.cost_lb)}</td>
+      <td>${money(r.value)}</td>
+      <td>${r.action}</td>
+    </tr>
+  `).join("");
+
+  show("success", "Preview generated. Fix errors (if any) and then commit.");
+};
+
+document.getElementById("backupBtn").onclick = async () => {
+  const res = await fetch("/api/admin/system/backup-now", {method:"POST"});
+  const d = await res.json().catch(()=> ({}));
+  if (res.ok && d.success) {
+    show("success", "Backup created.");
+    load();
+  } else {
+    show("error", d.error || "Backup failed");
+  }
+};
+
+document.getElementById("commitBtn").onclick = async () => {
+  if (!batchId) { show("error","Preview first."); return; }
+  if (!confirm("Commit this import? This will update inventory records.")) return;
+
+  const res = await fetch("/api/import/commit", {
+    method:"POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ batch_id: batchId })
+  });
+  const d = await res.json().catch(()=> ({}));
+  if (res.ok && d.success) {
+    show("success", `Import committed. Updated ${d.updated} items.`);
+    document.getElementById("commitBtn").disabled = true;
+  } else {
+    show("error", d.error || "Commit failed");
+  }
+};
+</script>
+{% endblock %}

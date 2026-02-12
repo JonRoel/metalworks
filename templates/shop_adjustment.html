@@ -19,7 +19,7 @@
     <div class="table-container">
       <table id="skuResults">
         <thead>
-          <tr><th>SKU</th><th>Material</th><th>Grade</th><th>Description</th><th>Length</th><th>Location</th><th>Qty</th><th></th></tr>
+          <tr><th>SKU</th><th>Material</th><th>Grade</th><th>Description</th><th>Length</th><th>Unit</th><th>Location</th><th>Qty</th><th></th></tr>
         </thead>
         <tbody></tbody>
       </table>
@@ -35,7 +35,8 @@
     <div class="form-group"><label>Material</label><select id="material" class="searchable" style="text-transform: uppercase;"></select></div>
     <div class="form-group"><label>Grade</label><select id="grade" class="searchable" style="text-transform: uppercase;"></select></div>
     <div class="form-group"><label>Description</label><select id="description" class="searchable" style="text-transform: uppercase;"></select></div>
-    <div class="form-group"><label>Length ()</label><input id="length" type="number" step=""></div>
+    <div class="form-group"><label>Length (ft ~ 0.5)</label><input id="length" type="number" step=""></div>
+    <div class="form-group"><label>Unit</label><input id="unit" type="text" value="ft"></div>
     <div class="form-group"><label>Location</label><select class="searchable" id="location"></select></div>
     <div class="form-group"><label>Quantity</label><input id="quantity" type="number" step="1" value="1"></div>
     <div class="form-group"><label>Notes</label><textarea id="notes" style="text-transform: uppercase;"></textarea></div>
@@ -124,7 +125,7 @@ async function runSkuSearch() {
   tbody.innerHTML = "";
 
   if (!items.length) {
-    tbody.innerHTML = `<tr><td colspan="8">No results.</td></tr>`;
+    tbody.innerHTML = `<tr><td colspan="9">No results.</td></tr>`;
     return;
   }
 
@@ -143,6 +144,7 @@ async function runSkuSearch() {
       <td>${gradeLabel}</td>
       <td>${descLabel}</td>
       <td>${it.length ?? ""}</td>
+      <td>${it.unit}</td>
       <td>${locLabel}</td>
       <td>${it.quantity ?? ""}</td>
       <td><button class="btn btn-edit" style="float:right;">Use this data</button></td>
@@ -171,8 +173,8 @@ document.getElementById("submit").onclick = async () => {
     material: document.getElementById("material").value,
     grade: document.getElementById("grade").value,
     description: document.getElementById("description").value,
-
     length: document.getElementById("length").value,
+    unit: document.getElementById("unit").value,
     location: document.getElementById("location").value,
     quantity: document.getElementById("quantity").value,
     notes: document.getElementById("notes").value.trim()
@@ -189,6 +191,17 @@ document.getElementById("submit").onclick = async () => {
   const data = await res.json().catch(()=> ({}));
   if (res.ok && data.success) {
     show("success","Request submitted.");
+    // Clear form for next one
+    document.getElementById("sku").value = "";
+    document.getElementById("material").value = "";
+    document.getElementById("grade").value = "";
+    document.getElementById("description").value = "";
+    document.getElementById("length").value = "";
+    document.getElementById("unit").value = "";
+    document.getElementById("location").value = "";
+    document.getElementById("quantity").value = "1";
+    document.getElementById("lbs_per_ft").value = "";
+    document.getElementById("notes").value = "";
   } else {
     show("error", data.error || "Failed to submit request");
   }

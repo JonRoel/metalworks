@@ -13,15 +13,26 @@
     <p>Inventory System</p>
   </div>
 
+
   {% if is_admin %}
     <div class="nav-section">
-      <div class="nav-section-title">Admin</div>
+      {% set u = current_user() %}
+      <div style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-left:auto; padding-bottom:25px; display:flex; gap:10px; align-items:center;">
+        {% if u and u.role == "admin" %}
+          <span class="badge badge-new">👤 {{ u.display_name }} (Admin)</span>
+        {% else %}
+          <a class="btn btn-secondary btn-small" href="/login">Admin Login</a>
+        {% endif %}
+      </div>
+      <!-- <div class="nav-section-title">Admin</div> -->
       <a class="nav-item {% if active=='admin_inventory' %}active{% endif %}" href="/admin/inventory">Inventory</a>
       <a class="nav-item {% if active=='admin_requests' %}active{% endif %}" href="/admin/requests">Pending Requests</a>
       <a class="nav-item {% if active=='admin_add' %}active{% endif %}" href="/admin/add">Add Inventory</a>
       <a class="nav-item {% if active=='admin_audit' %}active{% endif %}" href="/admin/audit">Audit Log</a>
       <a class="nav-item {% if active=='admin_fields' %}active{% endif %}" href="/admin/fields">Field Management</a>
-      <a class="nav-item {% if active=='admin_upload' %}active{% endif %}" href="/admin/upload">Upload CSV</a>
+      <a class="nav-item {% if active=='admin_reports' %}active{% endif %}" href="/admin/reports">Reports</a>
+      <a class="nav-item {% if active=='admin_system' %}active{% endif %}" href="/admin/system">System Reports</a>
+      <a class="nav-item {% if active=='admin_import' %}active{% endif %}" href="/admin/import">Upload CSV</a>
     </div>
     <div class="nav-section">
       <a class="nav-item" href="/admin/logout">Logout</a>
@@ -47,6 +58,18 @@
   </main>
 
   <script src="{{ url_for('static', filename='app.js') }}"></script>
-  {% block scripts %}{% endblock %}
+  {% block scripts %}
+  
+  <script>
+    const lb = document.getElementById("logoutBtn");
+    if (lb) {
+      lb.onclick = async () => {
+        await fetch("/api/logout", { method:"POST" });
+        window.location.href = "/shop/inventory";
+      };
+    }
+  </script>
+
+  {% endblock %}
 </body>
 </html>

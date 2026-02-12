@@ -8,36 +8,53 @@
 
   <form id="login-form" class="form">
     <div class="form-group">
-      <label>Password</label>
-      <input id="password" type="password" required autofocus>
+      <label>Username</label>
+      <input id="username" type="text" autocomplete="username" placeholder="">
     </div>
+
+    <div class="form-group">
+      <label>Password</label>
+      <input id="password" type="password" placeholder="If you forgot, call tech support" required autocomplete="current-password" autofocus>
+    </div>
+
     <button class="btn" type="submit" style="width:100%;">Login</button>
   </form>
 
   <div class="hint">
-    Demo password: <b>admin123</b> (change via METALWORKS_ADMIN_PASSWORD)
+    <div><b>New login:</b> new accounts cannot be created</div>
+    <div style="margin-top:6px;">If you need tech support, you are out of luck.</div>
   </div>
 </div>
 {% endblock %}
 
 {% block scripts %}
 <script>
+function showError(text){
+  document.getElementById("message").innerHTML = `<div class="message message-error">${text}</div>`;
+}
+
 document.getElementById("login-form").addEventListener("submit", async (e) => {
   e.preventDefault();
+
+  const username = document.getElementById("username").value.trim();
   const password = document.getElementById("password").value;
+
+  // If username is blank, use legacy mode (password-only)
+  const payload = username ? { username, password } : { password };
+
   const res = await fetch("/admin/login", {
     method: "POST",
     headers: {"Content-Type":"application/json"},
-    body: JSON.stringify({password})
+    body: JSON.stringify(payload)
   });
 
-  const msg = document.getElementById("message");
   if (res.ok) {
     window.location.href = "/admin/inventory";
     return;
   }
+
   const data = await res.json().catch(() => ({}));
-  msg.innerHTML = `<div class="message message-error">${data.message || "Login failed"}</div>`;
+  showError(data.error || data.message || "Login failed");
 });
 </script>
 {% endblock %}

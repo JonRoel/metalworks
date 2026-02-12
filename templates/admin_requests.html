@@ -24,17 +24,22 @@
         </div>
 
         <div class="form-grid">
-          <div class="form-group"><label>Material</label><input id="e_material"></div>
-          <div class="form-group"><label>Length</label><input id="e_length" type="number" step="1"></div>
-          <div class="form-group"><label>Location</label><select id="e_location"></select></div>
+          <div class="form-group"><label>Material</label><select class="searchable" id="e_material"></select></div>
+          <div class="form-group"><label>Grade</label><select class="searchable" id="e_grade"></select></div>
+          <div class="form-group"><label>Description</label><select class="searchable" id="e_description"></select></div>
+          <div class="form-group"><label>Length</label><input id="e_length" type="number" step="0.5"></div>
+          <div class="form-group"><label>Unit</label><input id="e_unit"></div>
+          <div class="form-group"><label>Location</label><select class="searchable" id="e_location"></select></div>
           <div class="form-group"><label>Quantity</label><input id="e_quantity" type="number" step="1"></div>
-          <div class="form-group"><label>Weight</label><input id="e_weight" type="number" step="1"></div>
+          <div class="form-group"><label>Lbs/ft</label><input id="e_lbs_per_ft" type="number" step="0.01"></div>
+          <div class="form-group"><label>Weight</label><input id="e_weight" type="number" step="0.01"></div>
           <div class="form-group"><label>Supplier</label><input id="e_supplier"></div>
           <div class="form-group"><label>PO Number</label><input id="e_po_number"></div>
+          <div class="form-group"><label>Cost/lb</label><input id="e_cost_lb" type="number" step="0.01"></div>
           <div class="form-group" style="grid-column: 1 / -1;"><label>Notes</label><textarea id="e_notes"></textarea></div>
         </div>
       </div>
-      <div class="modal-footer">
+      <div class="modal-footer" style="padding:0 30px 30px 15px; text-align: right;">
         <button class="btn btn-secondary" id="editCancel">Cancel</button>
         <button class="btn btn-success" id="editApprove">Approve (with edits)</button>
       </div>
@@ -49,21 +54,57 @@ let currentEditId = null;
 let currentEditType = null;
 let currentEditSku = null;
 
+// Mapping for displayed items to show labels only
+
+async function loadLookupMap(fieldKey){
+  const res = await fetch(`/api/lookups/${encodeURIComponent(fieldKey)}`);
+  const items = await res.json().catch(()=> []);
+  const map = {};
+  for (const it of items) map[String(it.code)] = it.label;
+  return map;
+}
+
+function labelOf(map, code){
+  if (code === null || code === undefined) return "";
+  const k = String(code);
+  return map && map[k] ? map[k] : k;
+}
+
 const editModal = document.getElementById("editModal");
 const closeEdit = () => editModal.classList.remove("active");
+
+async function initLookups() {
+  await Promise.all([
+    populateLookupSelect("location", "e_location", ""),
+    populateLookupSelect("description", "e_description", ""),
+    populateLookupSelect("grade", "e_grade", ""),
+    populateLookupSelect("material", "e_material", ""),
+  ]);
+  initSearchableSelects(document);
+}
+
+initLookups().catch(err => {
+  console.error("Lookup init failed:", err);
+  show("error", "Failed to load dropdowns.");
+});
 
 document.getElementById("editClose").onclick = closeEdit;
 document.getElementById("editCancel").onclick = closeEdit;
 editModal.addEventListener("click", (e) => { if (e.target === editModal) closeEdit(); });
-
+// map fields to edit fields
 function setEditFields(d) {
   document.getElementById("e_material").value = d.material ?? "";
+  document.getElementById("e_grade").value = d.grade ?? "";
+  document.getElementById("e_description").value = d.description ?? "";
   document.getElementById("e_length").value = d.length ?? "";
+  document.getElementById("e_unit").value = d.unit ?? "";
   document.getElementById("e_location").value = d.location ?? "";
   document.getElementById("e_quantity").value = d.quantity ?? "";
+  document.getElementById("e_lbs_per_ft").value = d.lbs_per_ft ?? "";
   document.getElementById("e_weight").value = d.weight ?? "";
   document.getElementById("e_supplier").value = d.supplier ?? "";
   document.getElementById("e_po_number").value = d.po_number ?? "";
+  document.getElementById("e_cost_lb").value = d.cost_lb ?? "";
   document.getElementById("e_notes").value = d.notes ?? "";
 }
 
@@ -73,7 +114,7 @@ function safeParse(s){
   try { return s ? JSON.parse(s) : null; } catch(e){ return null; }
 }
 function changedRows(oldD, newD){
-  const fields = ["material","length","location","quantity","weight","supplier","po_number","notes"];
+  const fields = ["material", "grade", "description", "length", "unit", "location","quantity", "lbs_per_ft", "weight","supplier","po_number", "cost_lb","notes"];
   let html = `<table style="width:100%; border-collapse:collapse;">
     <thead>
       <tr><th>Field</th>
@@ -105,9 +146,12 @@ function card(r) {
     ? changedRows(oldD, newD)
     : `<div class="detail-grid">
         <div class="detail-item"><div class="detail-label">SKU</div><div class="detail-value">${r.sku}</div></div>
-        <div class="detail-item"><div class="detail-label">Material</div><div class="detail-value">${r.material}</div></div>
+        <div class="detail-item"><div class="detail-label">Material</div><div class="detail-value">${labelOf(materialMap, r.material)}</div></div>
+        <div class="detail-item"><div class="detail-label">Grade</div><div class="detail-value">${labelOf(gradeMap, r.grade)}</div></div>
+        <div class="detail-item"><div class="detail-label">Description</div><div class="detail-value">${labelOf(descMap, r.description)}</div></div>
         <div class="detail-item"><div class="detail-label">Length</div><div class="detail-value">${r.length}</div></div>
-        <div class="detail-item"><div class="detail-label">Location</div><div class="detail-value">${r.location}</div></div>
+        <div class="detail-item"><div class="detail-label">Location</div><div class="detail-value">${labelOf(locationMap, r.location)}</div></div>
+        <div class="detail-item"><div class="detail-label">Quantity</div><div class="detail-value">${r.quantity}</div></div>
       </div>`;
 
   return `
@@ -136,10 +180,22 @@ async function load() {
   list.innerHTML = data.map(card).join("");
 
   document.querySelectorAll("[data-approve]").forEach(btn => btn.onclick = async () => {
-    const id = btn.getAttribute("data-approve");
-    const r = await fetch(`/api/requests/${id}/approve`, {method:"POST"});
-    if (r.ok) { show("success","Approved."); load(); } else show("error","Approve failed");
+  const id = btn.getAttribute("data-approve");
+
+  const r = await fetch(`/api/requests/${id}/approve`, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({})   // ✅ important
   });
+
+  if (r.ok) {
+    show("success","Approved.");
+    load();
+  } else {
+    const d = await r.json().catch(()=> ({}));
+    show("error", d.error || "Approve failed");
+  }
+});
 
   document.querySelectorAll("[data-decline]").forEach(btn => btn.onclick = async () => {
     const id = btn.getAttribute("data-decline");
@@ -147,54 +203,69 @@ async function load() {
     if (r.ok) { show("success","Declined."); load(); } else show("error","Decline failed");
   });
 
-  document.querySelectorAll("[data-edit]").forEach(btn => btn.onclick = async () => {
-  const id = btn.getAttribute("data-edit");
-  currentEditId = id;
+  // Pulls in data into modal
 
-  // Find the request object from current data
-  const req = data.find(x => String(x.id) === String(id));
+  document.querySelectorAll("[data-edit]").forEach(btn => btn.onclick = async () => {
+    const id = btn.getAttribute("data-edit");
+    currentEditId = id;
+
+    const req = data.find(x => String(x.id) === String(id));
     currentEditType = req.request_type;
     currentEditSku = req.sku;
+
     document.getElementById("e_sku_display").textContent = req.sku || "";
     document.getElementById("editSkuRow").style.display = req.sku ? "block" : "none";
 
-    const newD = safeParse(req.new_data) || req; // fallback
-    document.getElementById("editInfo").innerHTML =
-      `<div class="message message-info">Editing request <b>#${id}</b> ${req.sku ? "for SKU <b>" + req.sku + "</b>" : ""}</div>`;
-
-    // For adjustments, new_data may only include changed fields
-    // We'll prefill using: old_data merged with new_data, so form shows full current values.
+    const newD = safeParse(req.new_data) || req;
     const oldD = safeParse(req.old_data) || {};
     const merged = { ...oldD, ...newD };
 
-    // Populate location dropdown and select merged location
+    document.getElementById("editInfo").innerHTML =
+      `<div class="message message-info">Editing request <b>#${id}</b> ${req.sku ? "for SKU <b>" + req.sku + "</b>" : ""}</div>`;
+
+    // Populate ALL lookup selects with the stored CODE values
+    await populateLookupSelect("material", "e_material", merged.material || "");
+    await populateLookupSelect("grade", "e_grade", merged.grade || "");
+    await populateLookupSelect("description", "e_description", merged.description || "");
     await populateLookupSelect("location", "e_location", merged.location || "");
-    // await populateLocationSelect("e_location", merged.location || "");
+
+    // Re-init searchable UI inside modal AFTER options exist
     initSearchableSelects(document.getElementById("editModal"));
 
-    // Fill the rest of the fields (but DO NOT overwrite location now)
-    setEditFields({ ...merged, location: undefined });
+    // Set non-select fields
+    document.getElementById("e_length").value = merged.length ?? "";
+    document.getElementById("e_unit").value = merged.unit ?? "";
+    document.getElementById("e_quantity").value = merged.quantity ?? "";
+    document.getElementById("e_lbs_per_ft").value = merged.lbs_per_ft ?? "";
+    document.getElementById("e_weight").value = merged.weight ?? "";
+    document.getElementById("e_supplier").value = merged.supplier ?? "";
+    document.getElementById("e_po_number").value = merged.po_number ?? "";
+    document.getElementById("e_cost_lb").value = merged.cost_lb ?? "";
+    document.getElementById("e_notes").value = merged.notes ?? "";
 
     editModal.classList.add("active");
-
   });
-
 }
 
-document.getElementById("editApprove").onclick = async () => {
-  
-  if (!currentEditId) return;
+  document.getElementById("editApprove").onclick = async () => {
+    
+    if (!currentEditId) return;
 
-  // For adjust: send only fields admin *actually changed*? simplest v1: send all non-empty
-  const overrides = {
-    material: document.getElementById("e_material").value.trim(),
-    length: document.getElementById("e_length").value,
-    location: document.getElementById("e_location").value.trim(),
-    quantity: document.getElementById("e_quantity").value,
-    weight: document.getElementById("e_weight").value,
-    supplier: document.getElementById("e_supplier").value.trim(),
-    po_number: document.getElementById("e_po_number").value.trim(),
-    notes: document.getElementById("e_notes").value.trim(),
+    // For adjust: send only fields admin *actually changed*? simplest v1: send all non-empty
+    const overrides = {
+      material: document.getElementById("e_material").value,
+      grade: document.getElementById("e_grade").value,
+      description: document.getElementById("e_description").value,
+      length: document.getElementById("e_length").value,
+      unit: document.getElementById("e_unit").value.trim(),
+      location: document.getElementById("e_location").value,
+      quantity: document.getElementById("e_quantity").value,
+      lbs_per_ft: document.getElementById("e_lbs_per_ft").value,
+      weight: document.getElementById("e_weight").value,
+      supplier: document.getElementById("e_supplier").value.trim(),
+      po_number: document.getElementById("e_po_number").value.trim(),
+      cost_lb: document.getElementById("e_cost_lb").value,
+      notes: document.getElementById("e_notes").value.trim(),
   };
 
   // Clean empties so backend treats them as "not provided"
@@ -220,6 +291,18 @@ document.getElementById("editApprove").onclick = async () => {
 
 };
 
-load();
+// Function to deploy maps
+
+let materialMap = {}, gradeMap = {}, descMap = {}, locationMap = {}, unitMap = {};
+
+async function initMaps(){
+  materialMap = await loadLookupMap("material");
+  gradeMap = await loadLookupMap("grade");
+  descMap = await loadLookupMap("description");
+  locationMap = await loadLookupMap("location");
+  unitMap = await loadLookupMap("unit"); // only if unit is a lookup; remove if not
+}
+
+initMaps().then(load);
 </script>
 {% endblock %}

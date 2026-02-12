@@ -173,30 +173,6 @@ def init_db() -> None:
     # )
     
 
-
-    # App settings (approval counter, last backup stamp)
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS app_settings (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        );
-        """
-    )
-    cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('approval_count', '0');")
-    cur.execute("INSERT OR IGNORE INTO app_settings (key, value) VALUES ('last_backup_at', '');")
-
-    # Import batches (stores preview payloads until commit)
-    cur.execute(
-        """
-        CREATE TABLE IF NOT EXISTS import_batches (
-            id TEXT PRIMARY KEY,
-            created_by TEXT,
-            payload_json TEXT NOT NULL,
-            created_at TEXT DEFAULT CURRENT_TIMESTAMP
-        );
-        """
-    )
     cur.execute(
       """
       CREATE TABLE IF NOT EXISTS lookup_values (
@@ -1246,21 +1222,6 @@ def api_logout():
     session.clear()
     return jsonify(success=True)
 
-@app.get("/admin/inventory")
-@admin_required
-def admin_inventory():
-    return render_template("admin_inventory.html", is_admin=True, active="admin_inventory")
-
-@app.get("/admin/add")
-@admin_required
-def admin_add():
-    return render_template("admin_add.html", is_admin=True, active="admin_add")
-
-@app.get("/admin/import")
-@admin_required
-def admin_import():
-    return render_template("admin_import.html", is_admin=True, active="admin_import")
-
 
 def create_user(username: str, display_name: str, password: str, role: str = "admin") -> None:
     """One-time helper for seeding users."""
@@ -1277,6 +1238,32 @@ def create_user(username: str, display_name: str, password: str, role: str = "ad
     conn.commit()
     conn.close()
 
+
+
+@app.get("/admin/inventory")
+@admin_required
+def admin_inventory():
+    return render_template("admin_inventory.html", is_admin=True, active="admin_inventory")
+
+
+@app.get("/admin/add")
+@admin_required
+def admin_add():
+    return render_template("admin_add.html", is_admin=True, active="admin_add")
+
+# Depricated replaced with admin/import
+@app.get("/admin/upload")
+@admin_required
+def admin_upload():
+    return render_template("admin_upload.html", is_admin=True, active="admin_upload")
+
+# New import/upload
+@app.get("/admin/import")
+@admin_required
+def admin_import():
+    return render_template("admin_import.html", is_admin=True, active="admin_import")
+
+# Preview Endpoint
 @app.post("/api/import/preview")
 @admin_required
 def api_import_preview():
@@ -1294,6 +1281,8 @@ def api_import_preview():
     if not reader.fieldnames:
         return jsonify(success=False, error="CSV has no headers"), 400
 
+    # Expected headers (case-insensitive)
+    # You can add/remove fields; unknown columns are ignored.
     normalize = lambda s: (s or "").strip().lower()
     field_map = {normalize(h): h for h in reader.fieldnames}
 
@@ -1312,14 +1301,11 @@ def api_import_preview():
     conn.close()
     sku_to_id = {str(r["sku"]): int(r["id"]) for r in sku_rows}
 
-    preview_rows: list[dict] = []
-    errors: list[dict] = []
+    preview_rows = []
+    errors = []
     will_update = 0
-    will_insert = 0
     total_weight = 0.0
     total_value = 0.0
-
-    seen: set[str] = set()
 
     for idx, row in enumerate(reader, start=2):  # 1 is header
         sku = _to_str(row[field_map["sku"]])
@@ -1327,13 +1313,10 @@ def api_import_preview():
             errors.append({"row": idx, "sku": "", "error": "SKU is blank"})
             continue
 
-        if sku in seen:
-            errors.append({"row": idx, "sku": sku, "error": "Duplicate SKU in CSV"})
+        if sku not in sku_to_id:
+            # your rule: update existing only
+            errors.append({"row": idx, "sku": sku, "error": "SKU not found in inventory (update-only mode)"})
             continue
-        seen.add(sku)
-
-        item_id = sku_to_id.get(sku)  # None means insert
-        action = "update" if item_id else "insert"
 
         # resolve lookup-backed fields to codes (CSV may contain labels)
         material, e1 = _resolve_lookup(maps, "material", row[field_map["material"]])
@@ -1385,12 +1368,16 @@ def api_import_preview():
             continue
 
         # weight calc: if lbs_per_ft present and unit is ft/in
+        # If you always store length in feet, unit should be "ft".
         calc_weight = None
         if lbs_per_ft is not None:
             if unit == "ft":
                 calc_weight = length * qty * lbs_per_ft
             elif unit in ("in", "inch", "inches"):
                 calc_weight = (length / 12.0) * qty * lbs_per_ft
+            else:
+                # unknown unit; skip weight calc
+                calc_weight = None
 
         row_value = 0.0
         if calc_weight is not None and cost_lb is not None:
@@ -1398,8 +1385,7 @@ def api_import_preview():
 
         preview_rows.append({
             "row": idx,
-            "action": action,   # "insert" or "update"
-            "id": item_id,      # None for inserts
+            "id": sku_to_id[sku],
             "sku": sku,
             "material": material,
             "grade": grade,
@@ -1416,12 +1402,7 @@ def api_import_preview():
             "notes": notes or None,
             "value": row_value,
         })
-
-        if action == "insert":
-            will_insert += 1
-        else:
-            will_update += 1
-
+        will_update += 1
         total_weight += float(calc_weight or 0.0)
         total_value += float(row_value or 0.0)
 
@@ -1433,15 +1414,14 @@ def api_import_preview():
         success=True,
         batch_id=batch_id,
         will_update=will_update,
-        will_insert=will_insert,
         error_count=len(errors),
         errors=errors[:200],  # cap
         preview=preview_rows[:200],  # cap
         totals={"total_weight": total_weight, "total_value": total_value},
     )
 
-
-# Commi@app.post("/api/import/commit")
+# Commit Endpoint - submit previewed import
+@app.post("/api/import/commit")
 @admin_required
 def api_import_commit():
     data = request.get_json(silent=True) or {}
@@ -1460,68 +1440,43 @@ def api_import_commit():
 
     conn = db()
     cur = conn.cursor()
-    applied = 0
+    updated = 0
 
     try:
         cur.execute("BEGIN;")
         for r in rows:
-            action = r.get("action") or ("update" if r.get("id") else "insert")
-
-            if action == "insert" or not r.get("id"):
-                # INSERT new SKU
-                cur.execute("""
-                    INSERT INTO inventory (
-                      sku, material, grade, description, location,
-                      length, unit, quantity,
-                      lbs_per_ft, weight,
-                      supplier, po_number, cost_lb, notes,
-                      created_at, updated_at
-                    ) VALUES (
-                      ?,?,?,?,?, ?,?,?, ?,?, ?,?,?,?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
-                    );
-                """, (
-                    r["sku"],
-                    r["material"], r["grade"], r["description"], r["location"],
-                    r["length"], r["unit"], r["quantity"],
-                    r.get("lbs_per_ft"),
-                    r.get("weight"),
-                    r.get("supplier"),
-                    r.get("po_number"),
-                    r.get("cost_lb"),
-                    r.get("notes"),
-                ))
-                applied += 1
-            else:
-                # UPDATE existing by id; do not overwrite optional fields with blanks
-                cur.execute("""
-                    UPDATE inventory SET
-                        material=?,
-                        grade=?,
-                        description=?,
-                        location=?,
-                        length=?,
-                        unit=?,
-                        quantity=?,
-                        lbs_per_ft=COALESCE(?, lbs_per_ft),
-                        weight=COALESCE(?, weight),
-                        supplier=COALESCE(?, supplier),
-                        po_number=COALESCE(?, po_number),
-                        cost_lb=COALESCE(?, cost_lb),
-                        notes=COALESCE(?, notes),
-                        updated_at=CURRENT_TIMESTAMP
-                    WHERE id=?;
-                """, (
-                    r["material"], r["grade"], r["description"], r["location"],
-                    r["length"], r["unit"], r["quantity"],
-                    r.get("lbs_per_ft"),
-                    r.get("weight"),
-                    r.get("supplier"),
-                    r.get("po_number"),
-                    r.get("cost_lb"),
-                    r.get("notes"),
-                    r["id"],
-                ))
-                applied += 1
+            # Update only fields provided; do not nuke existing values if blank
+            # NOTE: cost_lb is optional; if None -> do not change it
+            # Same for lbs_per_ft, supplier, po_number, notes.
+            cur.execute("""
+                UPDATE inventory SET
+                    material=?,
+                    grade=?,
+                    description=?,
+                    location=?,
+                    length=?,
+                    unit=?,
+                    quantity=?,
+                    lbs_per_ft=COALESCE(?, lbs_per_ft),
+                    weight=COALESCE(?, weight),
+                    supplier=COALESCE(?, supplier),
+                    po_number=COALESCE(?, po_number),
+                    cost_lb=COALESCE(?, cost_lb),
+                    notes=COALESCE(?, notes),
+                    updated_at=CURRENT_TIMESTAMP
+                WHERE id=?;
+            """, (
+                r["material"], r["grade"], r["description"], r["location"],
+                r["length"], r["unit"], r["quantity"],
+                r.get("lbs_per_ft"),
+                r.get("weight"),
+                r.get("supplier"),
+                r.get("po_number"),
+                r.get("cost_lb"),
+                r.get("notes"),
+                r["id"],
+            ))
+            updated += 1
 
         cur.execute("COMMIT;")
     except Exception:
@@ -1530,9 +1485,7 @@ def api_import_commit():
         raise
     conn.close()
 
-    return jsonify(success=True, applied=applied)
-
-
+    return jsonify(success=True, updated=updated)
 
 
 # Requests Endpoint
