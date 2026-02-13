@@ -39,7 +39,7 @@
       <thead>
         <tr>
           <th>Row</th><th>SKU</th><th>Material</th><th>Grade</th><th>Description</th>
-          <th>Location</th><th>Len</th><th>Unit</th><th>Qty</th><th>Lbs/ft</th><th>Weight</th><th>Cost/lb</th><th>Value</th><th>Action</th>
+          <th>Location</th><th>Len</th><th>Unit</th><th>Qty</th><th>Lbs/ft</th><th>Weight</th><th>Cost/lb</th><th>Value</th>
         </tr>
       </thead>
       <tbody></tbody>
@@ -78,8 +78,6 @@ document.getElementById("previewBtn").onclick = async () => {
   document.getElementById("summary").innerHTML = `
     <div class="detail-item"><div class="detail-label">Will Update</div><div class="detail-value">${d.will_update}</div></div>
     <div class="detail-item"><div class="detail-label">Errors</div><div class="detail-value">${d.error_count}</div></div>
-    <div class="detail-item"><div class="detail-label">Total Weight</div><div class="detail-value">${num(d.totals.total_weight)}</div></div>
-    <div class="detail-item"><div class="detail-label">Total Value</div><div class="detail-value">${money(d.totals.total_value)}</div></div>
   `;
 
   document.getElementById("errors").innerHTML = (d.errors || []).map(e =>
@@ -102,7 +100,6 @@ document.getElementById("previewBtn").onclick = async () => {
       <td>${num(r.weight)}</td>
       <td>${num(r.cost_lb)}</td>
       <td>${money(r.value)}</td>
-      <td>${r.action}</td>
     </tr>
   `).join("");
 
@@ -139,3 +136,6 @@ document.getElementById("commitBtn").onclick = async () => {
 };
 </script>
 {% endblock %}
+
+<!-- <div class="detail-item"><div class="detail-label">Total Weight</div><div class="detail-value">${num(d.totals.total_weight)}</div></div>
+<div class="detail-item"><div class="detail-label">Total Value</div><div class="detail-value">${money(d.totals.total_value)}</div></div> -->

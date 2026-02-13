@@ -17,7 +17,7 @@
   {% if is_admin %}
     <div class="nav-section">
       {% set u = current_user() %}
-      <div style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-left:auto; padding-bottom:25px; display:flex; gap:10px; align-items:center;">
+      <div style="border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-left:auto; padding-left:5px; padding-bottom:25px; display:flex; gap:10px; align-items:center;">
         {% if u and u.role == "admin" %}
           <span class="badge badge-new">👤 {{ u.display_name }} (Admin)</span>
         {% else %}

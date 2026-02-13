@@ -29,16 +29,18 @@
 
 <div class="content-card">
   <div id="msg"></div>
-
+  <div class="full-width-text"><span style="color:red;">*</span> Required Feilds</div>
   <div class="form-grid">
-    <div class="form-group"><label>SKU</label><input id="sku" placeholder=""></div>
-    <div class="form-group"><label>Material</label><select id="material" class="searchable" style="text-transform: uppercase;"></select></div>
-    <div class="form-group"><label>Grade</label><select id="grade" class="searchable" style="text-transform: uppercase;"></select></div>
-    <div class="form-group"><label>Description</label><select id="description" class="searchable" style="text-transform: uppercase;"></select></div>
-    <div class="form-group"><label>Length (ft ~ 0.5)</label><input id="length" type="number" step=""></div>
-    <div class="form-group"><label>Unit</label><input id="unit" type="text" value="ft"></div>
-    <div class="form-group"><label>Location</label><select class="searchable" id="location"></select></div>
-    <div class="form-group"><label>Quantity</label><input id="quantity" type="number" step="1" value="1"></div>
+    <div class="form-group"><label>SKU <span style="color:red;">*</span></label><input id="sku" placeholder=""></div>
+    <div class="form-group"><label>Material <span style="color:red;">*</span></label><select id="material" class="searchable" style="text-transform: uppercase;"></select></div>
+    <div class="form-group"><label>Grade <span style="color:red;">*</span></label><select id="grade" class="searchable" style="text-transform: uppercase;"></select></div>
+    <div class="form-group"><label>Description <span style="color:red;">*</span></label><select id="description" class="searchable" style="text-transform: uppercase;"></select></div>
+    <div class="form-group"><label>Length (ft ~ 0.5) <span style="color:red;">*</span></label><input id="length" type="number" step=""></div>
+    <div class="form-group"><label>Unit <span style="color:red;">*</span></label><input id="unit" type="text" value="ft"></div>
+    <div class="form-group"><label>Location <span style="color:red;">*</span></label><select class="searchable" id="location"></select></div>
+    <div class="form-group"><label>Quantity <span style="color:red;">*</span></label><input id="quantity" type="number" step="1" value="1"></div>
+    <div class="form-group"><label>Lbs/ft</label><input id="lbs_per_ft" type="number" step="0.01"></div>
+    <div class="form-group"><label>Weight</label><input id="weight" type="number" step="0.01"></div>
     <div class="form-group"><label>Notes</label><textarea id="notes" style="text-transform: uppercase;"></textarea></div>
   </div>
 
@@ -111,9 +113,72 @@ async function populateLookupSelect(fieldKey, elementId, selected="") {
 
   el.value = selected || "";
 
-  // 🔥 critical: sync any listeners / searchable wrapper
+  // critical: sync any listeners / searchable wrapper
   el.dispatchEvent(new Event("change"));
 }
+
+// calculation requirements
+
+let descLbsMap = {}; // description_code -> lbs/ft
+
+async function loadDescriptionLookup(selected = "") {
+  const res = await fetch("/api/lookups/description");
+  const items = await res.json();
+
+  // Build map
+  descLbsMap = {};
+  for (const it of items) {
+    if (it.code != null && it.meta_num != null) {
+      descLbsMap[String(it.code)] = it.meta_num;
+    }
+  }
+
+  // Populate select
+  const sel = document.getElementById("description");
+  sel.innerHTML = `<option value=""></option>` + items.map(it =>
+    `<option value="${it.code}">${it.label}</option>`
+  ).join("");
+
+  if (selected) sel.value = selected;
+
+  // Make searchable (your vanilla searchable select)
+  initSearchableSelects();
+}
+
+// Calculate fields
+
+function recalcTotalWeight() {
+  const len = parseFloat(document.getElementById("length").value || "0");
+  const qty = parseFloat(document.getElementById("quantity").value || "0");
+  const lbf = parseFloat(document.getElementById("lbs_per_ft").value || "0");
+
+  if (len > 0 && qty > 0 && lbf > 0) {
+    document.getElementById("weight").value = (len * qty * lbf).toFixed(2);
+  } else {
+    document.getElementById("weight").value = "";
+  }
+}
+
+function wireWeightAutoCalc() {
+  const desc = document.getElementById("description");
+  const len  = document.getElementById("length");
+  const qty  = document.getElementById("quantity");
+  const lbf  = document.getElementById("lbs_per_ft");
+
+  if (desc) desc.addEventListener("change", () => {
+    const code = desc.value;
+    if (code && descLbsMap[code] != null) {
+      lbf.value = descLbsMap[code];
+    }
+    recalcTotalWeight();
+  });
+
+  if (len) len.addEventListener("input", recalcTotalWeight);
+  if (qty) qty.addEventListener("input", recalcTotalWeight);
+  if (lbf) lbf.addEventListener("input", recalcTotalWeight);
+}
+
+// End field calculations
 
 async function runSkuSearch() {
   const q = document.getElementById("skuSearch").value.trim();
@@ -177,6 +242,8 @@ document.getElementById("submit").onclick = async () => {
     unit: document.getElementById("unit").value,
     location: document.getElementById("location").value,
     quantity: document.getElementById("quantity").value,
+    lbs_per_ft: document.getElementById("lbs_per_ft").value,
+    weight: document.getElementById("weight").value,
     notes: document.getElementById("notes").value.trim()
   };
 
@@ -201,6 +268,7 @@ document.getElementById("submit").onclick = async () => {
     document.getElementById("location").value = "";
     document.getElementById("quantity").value = "1";
     document.getElementById("lbs_per_ft").value = "";
+    document.getElementById("weight").value = "";
     document.getElementById("notes").value = "";
   } else {
     show("error", data.error || "Failed to submit request");
@@ -208,6 +276,11 @@ document.getElementById("submit").onclick = async () => {
 };
 
 // Boot
+onload = (async () => {
+  await loadDescriptionLookup("");
+  wireWeightAutoCalc();
+})();
+
 initPage();
 </script>
 

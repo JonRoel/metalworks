@@ -1441,7 +1441,7 @@ def api_import_preview():
     )
 
 
-# Commi@app.post("/api/import/commit")
+@app.post("/api/import/commit")
 @admin_required
 def api_import_commit():
     data = request.get_json(silent=True) or {}
