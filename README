@@ -13,3 +13,211 @@ Use populateLookupSelect("grade", "grade", currentValue) on any form page inside
 And Field Management will automatically show uom in the dropdown.
 
 Note that the field id must match your script - in the example -> id=grade
+
+
+✅ 1. Final Folder Structure (Recommended)
+
+Put everything here:
+
+C:\metalworks\
+
+
+Inside that folder:
+
+C:\metalworks\
+ ├─ app.py
+ ├─ requirements.txt
+ ├─ templates\
+ ├─ static\
+ ├─ inventory.db
+ ├─ backups\
+ └─ logs\
+
+
+Create the folders now:
+
+mkdir C:\metalworks\logs
+mkdir C:\metalworks\backups
+
+✅ 2. Install Python (If Not Already Installed)
+
+Use Python 3.12 64-bit
+
+Verify:
+
+python --version
+
+
+If not found, reinstall and check “Add to PATH”.
+
+✅ 3. Create Virtual Environment
+
+Open Command Prompt as Administrator
+
+cd C:\metalworks
+python -m venv venv
+venv\Scripts\activate
+pip install --upgrade pip
+pip install -r requirements.txt
+pip install waitress
+
+✅ 4. Test App Manually First
+
+Still inside venv:
+
+waitress-serve --host=0.0.0.0 --port=5000 app:app
+
+
+Now test:
+
+On the server:
+http://localhost:5000
+
+From another PC:
+http://SERVERNAME:5000
+
+
+If that works → continue.
+
+Press Ctrl+C to stop.
+
+✅ 5. Open Windows Firewall Port 5000
+
+Run as Administrator:
+
+netsh advfirewall firewall add rule name="MetalWorks Flask 5000" dir=in action=allow protocol=TCP localport=5000
+
+✅ 6. Set Required Environment Variables (IMPORTANT)
+
+You must do this before creating the service.
+
+Open Admin CMD:
+
+setx SECRET_KEY "REPLACE_WITH_LONG_RANDOM_STRING" /M
+setx METALWORKS_ADMIN_PASSWORD "your_admin_password" /M
+
+
+Restart the server OR restart service later to apply.
+
+✅ 7. Install NSSM
+
+Download NSSM.
+
+Extract to:
+
+C:\nssm\
+
+
+You should have:
+
+C:\nssm\win64\nssm.exe
+
+✅ 8. Create Windows Service
+
+Open Admin CMD:
+
+C:\nssm\win64\nssm.exe install MetalWorks
+
+
+Fill fields exactly:
+
+Application Tab
+
+Path:
+
+C:\metalworks\venv\Scripts\waitress-serve.exe
+
+
+Startup directory:
+
+C:\metalworks
+
+
+Arguments:
+
+--host=0.0.0.0 --port=5000 app:app
+
+I/O Tab (VERY IMPORTANT)
+
+Stdout:
+
+C:\metalworks\logs\service_out.log
+
+
+Stderr:
+
+C:\metalworks\logs\service_err.log
+
+
+Click Install service
+
+✅ 9. Start Service
+nssm start MetalWorks
+
+
+Check status:
+
+sc query MetalWorks
+
+✅ 10. Set Service to Auto Start
+sc config MetalWorks start= auto
+
+
+Reboot the server to test persistence.
+
+✅ 11. Access From Other Machines
+
+Use:
+
+http://SERVERNAME:5000
+
+
+or
+
+http://SERVER_IP:5000
+
+🔍 If It Doesn't Start
+
+Check:
+
+C:\metalworks\logs\service_err.log
+
+
+Most common problems:
+
+Issue	Fix
+"No module named flask"	venv not installed correctly
+"cannot open database file"	wrong DB path or permissions
+Nothing loads	wrong startup directory
+Works manually but not service	env vars not set
+🔒 Important Production Notes
+1️⃣ Keep SQLite local
+
+Do NOT put inventory.db on a network share.
+
+2️⃣ Backups folder permissions
+
+Make sure service account can write to:
+
+C:\metalworks\backups
+
+3️⃣ If DB path is relative
+
+In app.py, make sure you define DB path like:
+
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DB_PATH = os.path.join(BASE_DIR, "inventory.db")
+
+
+Never rely on current working directory.
+
+🔁 Updating the App Later
+
+When you need to update code:
+
+nssm stop MetalWorks
+
+
+Replace files
+
+nssm start MetalWorks
